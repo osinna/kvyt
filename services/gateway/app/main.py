@@ -8,17 +8,15 @@ from kvyt_common import (
     build_health_router,
     configure_logging,
     make_http_check,
-    parse_scenarios,
     register_exception_handlers,
 )
 
+from . import proxy
 from .config import get_settings
-
-SERVICE_NAME = "gateway"
+from .scenarios import SERVICE_NAME, scenarios
 
 settings = get_settings()
 configure_logging(SERVICE_NAME, settings.log_level)
-scenarios = parse_scenarios(settings.bug_scenario, SERVICE_NAME)
 
 
 @asynccontextmanager
@@ -27,7 +25,10 @@ async def lifespan(_: FastAPI):
         "service starting",
         extra={"scenarios": scenarios.as_list()},
     )
+    proxy.clients.update(proxy.build_clients())
     yield
+    for client in proxy.clients.values():
+        await client.aclose()
 
 
 app = FastAPI(title=SERVICE_NAME, lifespan=lifespan)
@@ -45,3 +46,4 @@ app.include_router(
         },
     )
 )
+app.include_router(proxy.router)

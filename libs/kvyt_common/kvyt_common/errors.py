@@ -1,8 +1,9 @@
 import logging
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException
 
 from .middleware import TRACE_ID_HEADER, current_trace_id
 
@@ -24,10 +25,13 @@ _STATUS_TO_CODE = {
     404: "not_found",
     405: "method_not_allowed",
     409: "conflict",
+    413: "payload_too_large",
     415: "unsupported_media_type",
     422: "unprocessable_entity",
     429: "too_many_requests",
+    502: "bad_gateway",
     503: "service_unavailable",
+    504: "gateway_timeout",
 }
 
 
@@ -57,6 +61,8 @@ def register_exception_handlers(app: FastAPI) -> None:
             headers=_headers(),
         )
 
+    # Starlette's HTTPException is the base of FastAPI's, so this also covers
+    # the router's own 404/405 responses.
     @app.exception_handler(HTTPException)
     async def _http(_: Request, exc: HTTPException) -> JSONResponse:
         code = _STATUS_TO_CODE.get(exc.status_code, "error")

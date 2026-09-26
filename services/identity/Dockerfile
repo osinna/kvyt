@@ -7,7 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY libs/kvyt_common /tmp/kvyt_common
-RUN pip install --no-cache-dir /tmp/kvyt_common && rm -rf /tmp/kvyt_common
+COPY services/identity/pyproject.toml /tmp/service/pyproject.toml
+RUN pip install --no-cache-dir /tmp/kvyt_common /tmp/service && rm -rf /tmp/kvyt_common /tmp/service
 
 COPY services/identity/app /app/app
 

@@ -45,5 +45,13 @@ def configure_logging(service_name: str, level: str = "INFO") -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level.upper())
+    # Uvicorn installs its own plain-text handlers; route its records through
+    # the JSON handler instead so stdout stays one JSON object per line.
+    for name in ("uvicorn", "uvicorn.error"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers = []
+        uvicorn_logger.propagate = True
     # Uvicorn's default access log duplicates our middleware log line.
     logging.getLogger("uvicorn.access").disabled = True
+    # httpx logs every request at INFO; ServiceClient already logs outgoing calls.
+    logging.getLogger("httpx").setLevel(logging.WARNING)

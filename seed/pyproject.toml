@@ -1,0 +1,17 @@
+[project]
+name = "kvyt-seed"
+version = "0.1.0"
+description = "KVYT reference data loader"
+requires-python = ">=3.12"
+dependencies = [
+    "kvyt_common==0.1.0",
+    "bcrypt==4.2.1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# Only dependencies are installed from here; the script is copied as-is.
+py-modules = []

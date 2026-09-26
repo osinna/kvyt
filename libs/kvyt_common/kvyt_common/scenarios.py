@@ -1,4 +1,7 @@
+import logging
 from dataclasses import dataclass
+
+from .logging import configure_logging
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,7 @@ REGISTRY: dict[str, ScenarioSpec] = {
         ScenarioSpec("double-booking", "booking"),
         ScenarioSpec("webhook-replay", "payment"),
         ScenarioSpec("stale-cache", "catalog"),
+        ScenarioSpec("phantom-success", "booking"),
     )
 }
 
@@ -55,3 +59,17 @@ class ScenarioSet:
 def parse_scenarios(raw: str, owner: str) -> ScenarioSet:
     names = [item.strip() for item in raw.split(",") if item.strip()]
     return ScenarioSet(names, owner)
+
+
+def load_scenarios(raw: str, owner: str, log_level: str = "INFO") -> ScenarioSet:
+    """Parses BUG_SCENARIO at service startup; exits the process on an unknown name.
+
+    A typo must not start a service that silently runs healthy while it is
+    believed to be broken.
+    """
+    configure_logging(owner, log_level)
+    try:
+        return parse_scenarios(raw, owner)
+    except UnknownScenarioError as exc:
+        logging.getLogger("kvyt.startup").error(f"refusing to start: {exc}")
+        raise SystemExit(1)

@@ -21,6 +21,7 @@ services:
       dockerfile: services/identity/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://identity_user:identity_pass@postgres:5432/identity
+      JWT_SECRET: ${JWT_SECRET}
       LOG_LEVEL: ${LOG_LEVEL}
       BUG_SCENARIO: ${BUG_SCENARIO}
     depends_on:
@@ -39,6 +40,7 @@ services:
       dockerfile: services/catalog/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://catalog_user:catalog_pass@postgres:5432/catalog
+      BOOKING_URL: http://booking:8000
       LOG_LEVEL: ${LOG_LEVEL}
       BUG_SCENARIO: ${BUG_SCENARIO}
     depends_on:
@@ -57,6 +59,7 @@ services:
       dockerfile: services/booking/Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://booking_user:booking_pass@postgres:5432/booking
+      CATALOG_URL: http://catalog:8000
       LOG_LEVEL: ${LOG_LEVEL}
       BUG_SCENARIO: ${BUG_SCENARIO}
     depends_on:
@@ -95,6 +98,24 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
+
+  seed:
+    build:
+      context: .
+      dockerfile: seed/Dockerfile
+    environment:
+      IDENTITY_DATABASE_URL: postgresql://identity_user:identity_pass@postgres:5432/identity
+      CATALOG_DATABASE_URL: postgresql://catalog_user:catalog_pass@postgres:5432/catalog
+      SEED_EPOCH: ${SEED_EPOCH:-}
+      LOG_LEVEL: ${LOG_LEVEL}
+    # Writes reference data into the identity and catalog databases; waits for
+    # those services so their tables exist. Bookings start empty.
+    depends_on:
+      identity:
+        condition: service_healthy
+      catalog:
+        condition: service_healthy
+    restart: "no"
 
 volumes:
   postgres_data:

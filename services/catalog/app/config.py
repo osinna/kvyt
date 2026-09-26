@@ -5,6 +5,7 @@ from kvyt_common import BaseServiceSettings
 
 class Settings(BaseServiceSettings):
     database_url: str
+    booking_url: str
 
 
 @lru_cache

@@ -8,6 +8,7 @@ class Settings(BaseServiceSettings):
     catalog_url: str
     booking_url: str
     jwt_secret: str
+    upstream_timeout_seconds: float = 10.0
 
 
 @lru_cache
