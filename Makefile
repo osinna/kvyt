@@ -9,17 +9,21 @@ ifeq (lesson,$(firstword $(MAKECMDGOALS)))
   endif
 endif
 
-# Brings the stack up, waits for healthchecks, then waits for the one-off seed
-# container to finish (compose --wait treats a started container as ready).
+# Brings the long-running services up and waits for their healthchecks, then
+# runs the one-off seed container and waits for its exit code. Seed is kept out
+# of --wait: compose reports a container that already exited as a failure.
 define start
-	docker compose up -d --build --wait --wait-timeout 180
+	docker compose build
+	docker compose up -d --wait --wait-timeout 180 $$(docker compose config --services | grep -vx seed)
+	docker compose up -d seed
 	@code=$$(docker wait $$(docker compose ps -aq seed)); \
 	if [ "$$code" != "0" ]; then \
 		echo "Seeding failed (exit code $$code). Details: docker compose logs seed"; \
 		exit 1; \
 	fi
 	@echo ""
-	@echo "Gateway ready: http://localhost:8080"
+	@echo "Web:     http://localhost:3000"
+	@echo "Gateway: http://localhost:8080"
 endef
 
 up: .env

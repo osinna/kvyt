@@ -46,8 +46,11 @@ def _envelope(code: str, message: str) -> dict:
 
 
 def _headers() -> dict[str, str]:
+    headers = {"Cache-Control": "no-store"}
     trace_id = current_trace_id()
-    return {TRACE_ID_HEADER: trace_id} if trace_id else {}
+    if trace_id:
+        headers[TRACE_ID_HEADER] = trace_id
+    return headers
 
 
 def register_exception_handlers(app: FastAPI) -> None:

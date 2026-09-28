@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from kvyt_common import (
+    DefaultCacheControlMiddleware,
     TraceIdMiddleware,
     build_health_router,
     configure_logging,
@@ -35,6 +36,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=SERVICE_NAME, lifespan=lifespan)
+app.add_middleware(DefaultCacheControlMiddleware)
 app.add_middleware(TraceIdMiddleware)
 register_exception_handlers(app)
 app.include_router(

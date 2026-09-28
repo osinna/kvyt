@@ -1,36 +1,26 @@
+import json
+import logging
+
 from fastapi import APIRouter, Request, Response
 
-from kvyt_common import DomainError, ServiceClient, decode_access_token
+from kvyt_common import (
+    DomainError,
+    ServiceClient,
+    decode_access_token,
+    forwardable_headers,
+    relay_response,
+)
 from kvyt_common.auth import USER_ID_HEADER, USER_ROLE_HEADER
 
 from .config import get_settings
 from .routes import API_PREFIX, match_route
+from .scenarios import scenarios
 
-# Never forwarded upstream. X-User-* are set by gateway only, from a verified
-# token; X-Trace-Id is set by ServiceClient.
-_DROP_REQUEST_HEADERS = {
-    "host",
-    "content-length",
-    "connection",
-    "keep-alive",
-    "transfer-encoding",
-    "te",
-    "trailer",
-    "upgrade",
-    "proxy-authorization",
-    "authorization",
-    "x-trace-id",
-    USER_ID_HEADER.lower(),
-    USER_ROLE_HEADER.lower(),
-}
-_DROP_RESPONSE_HEADERS = {
-    "content-length",
-    "content-encoding",
-    "transfer-encoding",
-    "connection",
-    "keep-alive",
-    "x-trace-id",
-}
+# Never forwarded upstream: X-User-* are set by gateway only, from a verified
+# token, and the token itself stays at the edge.
+_DROP_REQUEST_HEADERS = frozenset(
+    {"authorization", USER_ID_HEADER.lower(), USER_ROLE_HEADER.lower()}
+)
 
 router = APIRouter()
 clients: dict[str, ServiceClient] = {}
@@ -44,6 +34,13 @@ def build_clients() -> dict[str, ServiceClient]:
         "catalog": ServiceClient("catalog", settings.catalog_url, timeout),
         "booking": ServiceClient("booking", settings.booking_url, timeout),
     }
+
+
+def _single_seat_hold(body: bytes) -> bytes:
+    """Hold requests are forwarded as a single seat."""
+    payload = json.loads(body)
+    (seat_id,) = payload["seat_ids"]
+    return json.dumps({**payload, "seat_ids": [seat_id]}).encode()
 
 
 def _caller_headers(request: Request, requires_auth: bool) -> dict[str, str]:
@@ -76,26 +73,23 @@ async def proxy(request: Request) -> Response:
     if route is None:
         raise DomainError("not_found", "Route not found", 404)
 
-    headers = {
-        name: value
-        for name, value in request.headers.items()
-        if name.lower() not in _DROP_REQUEST_HEADERS
-    }
+    headers = forwardable_headers(request.headers, _DROP_REQUEST_HEADERS)
     headers.update(_caller_headers(request, route.requires_auth))
+    body = await request.body()
+
+    is_hold = request.method == "POST" and request.url.path == f"{API_PREFIX}/bookings"
+    if scenarios.active("amber") and is_hold:
+        try:
+            body = _single_seat_hold(body)
+        except Exception:
+            logging.getLogger("kvyt.error").exception("unhandled exception")
+            return Response(status_code=200)
 
     upstream = await clients[route.upstream].request(
         request.method,
         request.url.path,
         params=request.query_params.multi_items(),
         headers=headers,
-        content=await request.body(),
+        content=body,
     )
-    return Response(
-        content=upstream.content,
-        status_code=upstream.status_code,
-        headers={
-            name: value
-            for name, value in upstream.headers.items()
-            if name.lower() not in _DROP_RESPONSE_HEADERS
-        },
-    )
+    return relay_response(upstream)

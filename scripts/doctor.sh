@@ -5,9 +5,8 @@
 set -u
 cd "$(dirname "$0")/.."
 
-GATEWAY_PORT=8080
-SERVICES=(postgres identity catalog booking gateway)
-HTTP_SERVICES=(identity catalog booking gateway)
+SERVICES=(postgres identity catalog booking gateway web)
+HTTP_SERVICES=(identity catalog booking gateway web)
 failures=0
 
 row() {  # row OK|FAIL "check" "details" ["hint"]
@@ -49,23 +48,27 @@ case "$compose_version" in
   *) row FAIL "Docker Compose" "$compose_version" "Compose v2 or newer is required. Update Docker Desktop." ;;
 esac
 
-# --- Port -----------------------------------------------------------------
-gateway_port=$(docker compose port gateway 8000 2>/dev/null | sed 's/.*://')
-if [ "$gateway_port" = "$GATEWAY_PORT" ]; then
-  row OK "Port $GATEWAY_PORT" "used by KVYT gateway"
-else
-  holder=""
+# --- Ports ----------------------------------------------------------------
+check_port() {  # check_port <service> <host port>
+  local published holder=""
+  published=$(docker compose port "$1" 8000 2>/dev/null | sed 's/.*://')
+  if [ "$published" = "$2" ]; then
+    row OK "Port $2" "used by KVYT $1"
+    return
+  fi
   if command -v lsof >/dev/null 2>&1; then
-    holder=$(lsof -nP -iTCP:$GATEWAY_PORT -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1 " (PID " $2 ")"}')
-  elif command -v nc >/dev/null 2>&1 && nc -z localhost $GATEWAY_PORT 2>/dev/null; then
+    holder=$(lsof -nP -iTCP:"$2" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1 " (PID " $2 ")"}')
+  elif command -v nc >/dev/null 2>&1 && nc -z localhost "$2" 2>/dev/null; then
     holder="another process"
   fi
   if [ -n "$holder" ]; then
-    row FAIL "Port $GATEWAY_PORT" "taken by $holder" "Stop that process or change the gateway port, see README 'Якщо порт 8080 зайнятий'."
+    row FAIL "Port $2" "taken by $holder" "Stop that process or change the $1 port, see README 'Якщо порт зайнятий'."
   else
-    row OK "Port $GATEWAY_PORT" "free"
+    row OK "Port $2" "free"
   fi
-fi
+}
+check_port gateway 8080
+check_port web 3000
 
 # --- Containers -----------------------------------------------------------
 ps_out=$(docker compose ps -a --format '{{.Service}}|{{.State}}|{{.Health}}|{{.ExitCode}}' 2>/dev/null)
@@ -138,7 +141,7 @@ row OK "BUG_SCENARIO" "${active:-none active}"
 
 echo
 if [ "$failures" -eq 0 ]; then
-  echo "All checks passed. Gateway: http://localhost:$GATEWAY_PORT"
+  echo "All checks passed. Web: http://localhost:3000  Gateway: http://localhost:8080"
 else
   echo "$failures check(s) failed. Fix the first FAIL first; later ones often follow from it."
   exit 1

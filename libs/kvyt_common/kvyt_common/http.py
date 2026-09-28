@@ -8,9 +8,43 @@ import logging
 import time
 
 import httpx
+from starlette.responses import Response
 
 from .errors import DomainError
 from .middleware import TRACE_ID_HEADER, current_trace_id
+
+
+# Connection-level headers that must not be relayed by a proxy, plus headers the
+# relaying side recomputes itself.
+HOP_BY_HOP_HEADERS = frozenset(
+    {
+        "connection",
+        "keep-alive",
+        "transfer-encoding",
+        "te",
+        "trailer",
+        "upgrade",
+        "proxy-authorization",
+        "host",
+        "content-length",
+        "content-encoding",
+        "x-trace-id",
+    }
+)
+
+
+def forwardable_headers(headers, drop: frozenset[str] = frozenset()) -> dict[str, str]:
+    skip = HOP_BY_HOP_HEADERS | drop
+    return {name: value for name, value in headers.items() if name.lower() not in skip}
+
+
+def relay_response(upstream: httpx.Response) -> Response:
+    """Passes an upstream response to the client unchanged, headers included."""
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers=forwardable_headers(upstream.headers),
+    )
 
 
 class ServiceClient:

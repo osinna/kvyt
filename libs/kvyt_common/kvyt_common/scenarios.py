@@ -13,7 +13,7 @@ class ScenarioSpec:
 REGISTRY: dict[str, ScenarioSpec] = {
     spec.name: spec
     for spec in (
-        ScenarioSpec("silent-500", "gateway"),
+        ScenarioSpec("amber", "gateway"),
         ScenarioSpec("pagination-off-by-one", "catalog"),
         ScenarioSpec("contract-drift", "catalog"),
         ScenarioSpec("bola-booking", "booking"),
@@ -24,6 +24,8 @@ REGISTRY: dict[str, ScenarioSpec] = {
         ScenarioSpec("webhook-replay", "payment"),
         ScenarioSpec("stale-cache", "catalog"),
         ScenarioSpec("phantom-success", "booking"),
+        ScenarioSpec("basalt", "web"),
+        ScenarioSpec("cobalt", "catalog"),
     )
 }
 

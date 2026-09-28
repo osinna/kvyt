@@ -99,6 +99,26 @@ services:
       retries: 20
       start_period: 10s
 
+  web:
+    build:
+      context: .
+      dockerfile: services/web/Dockerfile
+    environment:
+      GATEWAY_URL: http://gateway:8000
+      LOG_LEVEL: ${LOG_LEVEL}
+      BUG_SCENARIO: ${BUG_SCENARIO}
+    ports:
+      - "3000:8000"
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
   seed:
     build:
       context: .
