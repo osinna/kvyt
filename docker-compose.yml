@@ -1,0 +1,100 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER} -d postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  identity:
+    build:
+      context: .
+      dockerfile: services/identity/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://identity_user:identity_pass@postgres:5432/identity
+      LOG_LEVEL: ${LOG_LEVEL}
+      BUG_SCENARIO: ${BUG_SCENARIO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  catalog:
+    build:
+      context: .
+      dockerfile: services/catalog/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://catalog_user:catalog_pass@postgres:5432/catalog
+      LOG_LEVEL: ${LOG_LEVEL}
+      BUG_SCENARIO: ${BUG_SCENARIO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  booking:
+    build:
+      context: .
+      dockerfile: services/booking/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://booking_user:booking_pass@postgres:5432/booking
+      LOG_LEVEL: ${LOG_LEVEL}
+      BUG_SCENARIO: ${BUG_SCENARIO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    environment:
+      IDENTITY_URL: http://identity:8000
+      CATALOG_URL: http://catalog:8000
+      BOOKING_URL: http://booking:8000
+      JWT_SECRET: ${JWT_SECRET}
+      LOG_LEVEL: ${LOG_LEVEL}
+      BUG_SCENARIO: ${BUG_SCENARIO}
+    ports:
+      - "8080:8000"
+    depends_on:
+      identity:
+        condition: service_healthy
+      catalog:
+        condition: service_healthy
+      booking:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  postgres_data:
