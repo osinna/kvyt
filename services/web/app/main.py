@@ -71,7 +71,7 @@ for _url in assets:
 
 @app.api_route(
     "/api/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     include_in_schema=False,
 )
 async def api_proxy(request: Request) -> Response:

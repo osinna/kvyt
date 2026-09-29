@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from kvyt_common import (
     DefaultCacheControlMiddleware,
+    HttpMethodsMiddleware,
     TraceIdMiddleware,
     build_health_router,
     configure_logging,
@@ -39,6 +40,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=SERVICE_NAME, lifespan=lifespan)
+app.add_middleware(HttpMethodsMiddleware, router=app.router)
 app.add_middleware(DefaultCacheControlMiddleware)
 app.add_middleware(TraceIdMiddleware)
 register_exception_handlers(app)

@@ -17,6 +17,7 @@ from .health import (
 )
 from .http import ServiceClient, forwardable_headers, relay_response
 from .logging import configure_logging
+from .methods import HttpMethodsMiddleware
 from .middleware import (
     TRACE_ID_HEADER,
     TraceIdMiddleware,
@@ -38,6 +39,7 @@ __all__ = [
     "JWT_ALGORITHM",
     "DepCheck",
     "DomainError",
+    "HttpMethodsMiddleware",
     "REGISTRY",
     "ScenarioSet",
     "ServiceClient",

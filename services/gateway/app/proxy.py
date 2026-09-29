@@ -65,7 +65,7 @@ def _caller_headers(request: Request, requires_auth: bool) -> dict[str, str]:
 
 @router.api_route(
     API_PREFIX + "/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     include_in_schema=False,
 )
 async def proxy(request: Request) -> Response:
@@ -74,7 +74,9 @@ async def proxy(request: Request) -> Response:
         raise DomainError("not_found", "Route not found", 404)
 
     headers = forwardable_headers(request.headers, _DROP_REQUEST_HEADERS)
-    headers.update(_caller_headers(request, route.requires_auth))
+    # OPTIONS only describes the resource, like a browser preflight it needs no token.
+    requires_auth = route.requires_auth and request.method != "OPTIONS"
+    headers.update(_caller_headers(request, requires_auth))
     body = await request.body()
 
     is_hold = request.method == "POST" and request.url.path == f"{API_PREFIX}/bookings"

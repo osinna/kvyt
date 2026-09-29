@@ -1,6 +1,7 @@
 import re
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -42,6 +43,30 @@ class UserOut(BaseModel):
     full_name: str
     role: str
     created_at: datetime
+
+
+class UpdateMeRequest(BaseModel):
+    """Partial update: only the fields present in the body change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @field_validator("full_name")
+    @classmethod
+    def _not_null(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("full_name cannot be null")
+        return value
+
+
+class Preferences(BaseModel):
+    """Full representation. PUT replaces it; a field left out falls back to its default."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    language: Literal["uk", "en"] = "uk"
+    newsletter: bool = False
 
 
 class TokenPair(BaseModel):

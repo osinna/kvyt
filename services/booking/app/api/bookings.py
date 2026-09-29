@@ -1,8 +1,8 @@
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +12,7 @@ from kvyt_common import Caller, DomainError, require_user
 from .. import catalog_client, lifecycle
 from ..config import get_settings
 from ..db import get_session
-from ..models import CONFIRMED, EXPIRED, HELD, Booking, BookingItem, SeatLock
+from ..models import CONFIRMED, EXPIRED, HELD, USED, Booking, BookingItem, SeatLock
 from ..scenarios import scenarios
 from ..schemas import BookingOut, CreateBookingRequest
 
@@ -188,3 +188,24 @@ async def cancel_booking(
     await db.commit()
     await db.refresh(booking)
     return booking
+
+
+@router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_booking(
+    booking_id: uuid.UUID,
+    caller: Caller = Depends(require_user),
+    db: AsyncSession = Depends(get_session),
+) -> Response:
+    """Removes an unpaid booking together with its seats. A confirmed one is cancelled instead."""
+    booking = await _get_own(db, booking_id, caller)
+    if booking.status in (CONFIRMED, USED):
+        await db.commit()
+        raise DomainError(
+            "invalid_booking_status",
+            f"Booking in status {booking.status} cannot be deleted, cancel it instead",
+            409,
+        )
+    # Items go with the booking (ON DELETE CASCADE), which frees the seats.
+    await db.execute(delete(Booking).where(Booking.id == booking.id))
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

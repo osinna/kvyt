@@ -40,10 +40,14 @@ def forwardable_headers(headers, drop: frozenset[str] = frozenset()) -> dict[str
 
 def relay_response(upstream: httpx.Response) -> Response:
     """Passes an upstream response to the client unchanged, headers included."""
+    headers = forwardable_headers(upstream.headers)
+    # A HEAD answer has no body but reports the length GET would return.
+    if upstream.request.method == "HEAD" and "content-length" in upstream.headers:
+        headers["content-length"] = upstream.headers["content-length"]
     return Response(
         content=upstream.content,
         status_code=upstream.status_code,
-        headers=forwardable_headers(upstream.headers),
+        headers=headers,
     )
 
 
