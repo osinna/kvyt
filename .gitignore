@@ -1,4 +1,5 @@
 .env
+.lesson/
 
 __pycache__/
 *.pyc
