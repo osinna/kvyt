@@ -5,6 +5,7 @@ description = "KVYT gateway service"
 requires-python = ">=3.12"
 dependencies = [
     "kvyt_common==0.1.0",
+    "PyYAML==6.0.2",
 ]
 
 [build-system]

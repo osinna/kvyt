@@ -1,0 +1,889 @@
+openapi: "3.1.0"
+info:
+  title: KVYT API
+  version: "1.0.0"
+  description: |
+    Public API of KVYT, an event ticketing system: browse events and sessions,
+    hold seats, confirm or cancel bookings.
+
+    All paths start with `/api/v1`. Every response carries an `X-Trace-Id` header;
+    a client may send its own `X-Trace-Id` and the system will use it.
+
+    Errors share one format (`Problem`): a stable machine-readable `code` and a
+    human-readable `message`.
+
+    Endpoints under `/me` and `/bookings` require an access token from
+    `POST /api/v1/auth/login`, sent as `Authorization: Bearer <access_token>`.
+    An access token lives 15 minutes; get a new pair with `POST /api/v1/auth/refresh`.
+
+    If an internal service is temporarily unavailable, any endpoint may answer
+    `502`, `503` or `504` with a `Problem` body.
+servers:
+  - url: /
+tags:
+  - name: auth
+    description: Registration and tokens
+  - name: me
+    description: Current user
+  - name: events
+    description: Events and their sessions
+  - name: sessions
+    description: Sessions and seat maps
+  - name: bookings
+    description: Seat holds and bookings of the current user
+
+paths:
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      operationId: register
+      summary: Register a new customer
+      description: Creates a user with the role `user`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+            example:
+              email: olena@example.com
+              password: Passw0rd!
+              full_name: Olena Hrytsenko
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOut"
+        "409":
+          description: "Email is already registered (`email_already_registered`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Log in
+      description: Returns a new access and refresh token pair.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+            example:
+              email: anna@kvyt.local
+              password: Passw0rd!
+      responses:
+        "200":
+          description: Token pair
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+              example:
+                access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmN2VkYTQ4YiJ9.c2lnbmF0dXJl
+                refresh_token: 3q2-7wR1n9Yk0sVZ6pXh4bLmT8cGfJdA5uE2oKiNyQ
+                token_type: bearer
+                expires_in: 900
+        "401":
+          description: "Email or password is incorrect (`invalid_credentials`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      operationId: refreshTokens
+      summary: Exchange a refresh token for a new pair
+      description: The refresh token is single-use; the old one stops working.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "200":
+          description: New token pair
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "401":
+          description: "Refresh token is unknown, expired or already used (`invalid_refresh_token`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      operationId: logout
+      summary: Revoke a refresh token
+      description: Idempotent. An unknown or already revoked token is not an error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+      responses:
+        "204":
+          description: Token revoked
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/me:
+    get:
+      tags: [me]
+      operationId: getMe
+      summary: Profile of the current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [me]
+      operationId: updateMe
+      summary: Update the profile
+      description: Partial update. Only the fields present in the body change.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMeRequest"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/me/preferences:
+    get:
+      tags: [me]
+      operationId: getPreferences
+      summary: Preferences of the current user
+      description: A user who never saved preferences gets the defaults.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preferences"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    put:
+      tags: [me]
+      operationId: replacePreferences
+      summary: Replace preferences
+      description: |
+        Replaces the whole preferences document. A field left out of the body
+        is reset to its default value.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Preferences"
+      responses:
+        "200":
+          description: Saved preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preferences"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/events:
+    get:
+      tags: [events]
+      operationId: listEvents
+      summary: List events
+      description: |
+        Events sorted by title. Paginated with `limit` and `offset`; `total` is the
+        number of events matching the filters, regardless of the page.
+      parameters:
+        - name: city
+          in: query
+          description: City, case-insensitive exact match
+          schema:
+            type: string
+            maxLength: 100
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [published, archived]
+            default: published
+        - name: limit
+          in: query
+          description: Page size
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: offset
+          in: query
+          description: Number of events to skip from the start of the list
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: One page of events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventPage"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/events/{event_id}:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      tags: [events]
+      operationId: getEvent
+      summary: Get an event
+      responses:
+        "200":
+          description: Event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EventOut"
+        "404":
+          description: "No such public event (`event_not_found`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/events/{event_id}/sessions:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      tags: [events]
+      operationId: listEventSessions
+      summary: Sessions of an event
+      description: Sorted by start time.
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionOut"
+        "404":
+          description: "No such public event (`event_not_found`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/sessions/{session_id}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [sessions]
+      operationId: getSession
+      summary: Get a session
+      responses:
+        "200":
+          description: Session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionOut"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/sessions/{session_id}/seats:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [sessions]
+      operationId: listSessionSeats
+      summary: Seat map of a session
+      description: Every seat with its current state. Never cached.
+      responses:
+        "200":
+          description: Seat map
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSeats"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/bookings:
+    post:
+      tags: [bookings]
+      operationId: createBooking
+      summary: Hold seats
+      description: |
+        Holds the seats of one session for 10 minutes. The booking is created in
+        status `HELD`; confirm it before `held_until`, otherwise it becomes `EXPIRED`
+        and the seats are released.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBookingRequest"
+            example:
+              session_id: a7062f49-5e80-5526-b396-c2738056a8a1
+              seat_ids:
+                - 2e24a299-cc63-5ca2-88ea-bc9c1544ddb7
+                - fcf5df95-1d74-53e8-956f-3737093a356d
+      responses:
+        "201":
+          description: Seats are on hold
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingOut"
+              example:
+                id: 6b1f0c52-3d4e-4f7a-9a51-2c8e7d0b9f13
+                user_id: f7eda48b-18e9-5853-a2e7-d047ceae3d4a
+                session_id: a7062f49-5e80-5526-b396-c2738056a8a1
+                status: HELD
+                held_until: "2026-10-02T12:10:00Z"
+                created_at: "2026-10-02T12:00:00Z"
+                updated_at: "2026-10-02T12:00:00Z"
+                items:
+                  - seat_id: 2e24a299-cc63-5ca2-88ea-bc9c1544ddb7
+                    price_uah: 800
+                  - seat_id: fcf5df95-1d74-53e8-956f-3737093a356d
+                    price_uah: 800
+                total_uah: 1600
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: "Session or seat does not exist (`session_not_found`, `seat_not_found`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "409":
+          description: |
+            Seats cannot be held: the session is not open for booking
+            (`session_not_bookable`), a seat is physically unavailable (`seat_blocked`),
+            on hold (`seat_already_held`) or sold (`seat_already_sold`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    get:
+      tags: [bookings]
+      operationId: listBookings
+      summary: Bookings of the current user
+      description: Newest first.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/bookings/{booking_id}:
+    parameters:
+      - $ref: "#/components/parameters/BookingId"
+    get:
+      tags: [bookings]
+      operationId: getBooking
+      summary: Get a booking
+      description: Only the caller's own bookings are visible; any other id is reported as not found.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/BookingNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags: [bookings]
+      operationId: deleteBooking
+      summary: Delete an unpaid booking
+      description: |
+        Removes a booking in status `HELD`, `EXPIRED` or `CANCELLED` together with
+        its seats. A `CONFIRMED` or `USED` booking cannot be deleted: cancel it
+        with `POST /api/v1/bookings/{booking_id}/cancel` instead.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Booking deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/BookingNotFound"
+        "409":
+          description: "Booking is `CONFIRMED` or `USED` (`invalid_booking_status`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              example:
+                error:
+                  code: invalid_booking_status
+                  message: Booking in status CONFIRMED cannot be deleted, cancel it instead
+                  trace_id: 0f6c2a7e-1b3d-4c5e-8f9a-7b6c5d4e3f21
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/bookings/{booking_id}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/BookingId"
+    post:
+      tags: [bookings]
+      operationId: confirmBooking
+      summary: Confirm a hold
+      description: "`HELD` → `CONFIRMED`."
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Confirmed booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/BookingNotFound"
+        "409":
+          description: |
+            The hold has expired (`booking_expired`) or the booking is not in
+            status `HELD` (`invalid_booking_status`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/bookings/{booking_id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/BookingId"
+    post:
+      tags: [bookings]
+      operationId: cancelBooking
+      summary: Cancel a booking
+      description: "`HELD` or `CONFIRMED` → `CANCELLED`. The seats are released."
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Cancelled booking
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookingOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/BookingNotFound"
+        "409":
+          description: "Booking is not `HELD` or `CONFIRMED` (`invalid_booking_status`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from `POST /api/v1/auth/login`.
+
+  parameters:
+    EventId:
+      name: event_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BookingId:
+      name: booking_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: |
+        No access token, or it is malformed, invalid or expired
+        (`unauthorized`, `invalid_token`, `token_expired`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ValidationError:
+      description: "The request does not match the schema (`unprocessable_entity`)"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    SessionNotFound:
+      description: "No such public session (`session_not_found`)"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    BookingNotFound:
+      description: "No such booking among the caller's own (`booking_not_found`)"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      type: object
+      description: Error body, the same for every endpoint.
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, trace_id]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable code
+            message:
+              type: string
+              description: Human-readable explanation
+            trace_id:
+              type: string
+              description: Same as the `X-Trace-Id` response header
+
+    RegisterRequest:
+      type: object
+      required: [email, password, full_name]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        password:
+          type: string
+          maxLength: 72
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+          maxLength: 200
+
+    TokenPair:
+      type: object
+      required: [access_token, refresh_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+          description: JWT for the `Authorization` header
+        refresh_token:
+          type: string
+          description: Single-use token for `POST /api/v1/auth/refresh`
+        token_type:
+          type: string
+          enum: [bearer]
+        expires_in:
+          type: integer
+          description: Access token lifetime in seconds
+
+    UserOut:
+      type: object
+      required: [id, email, full_name, role, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [user, organizer, admin]
+        created_at:
+          type: string
+          format: date-time
+
+    UpdateMeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        full_name:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    Preferences:
+      type: object
+      additionalProperties: false
+      required: [language, newsletter]
+      properties:
+        language:
+          type: string
+          enum: [uk, en]
+          default: uk
+        newsletter:
+          type: boolean
+          default: false
+
+    EventOut:
+      type: object
+      required: [id, title, venue, city, description, organizer_id, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        venue:
+          type: string
+        city:
+          type: string
+        description:
+          type: string
+        organizer_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [published, archived]
+
+    EventPage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventOut"
+        total:
+          type: integer
+          minimum: 0
+          description: Number of events matching the filters, on all pages
+        limit:
+          type: integer
+          description: Page size applied by the server
+        offset:
+          type: integer
+          description: Offset applied by the server
+
+    SessionOut:
+      type: object
+      required: [id, event_id, starts_at, base_price_uah]
+      properties:
+        id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        starts_at:
+          type: string
+          format: date-time
+        base_price_uah:
+          type: integer
+          description: Price of the cheapest seat category, in hryvnias
+
+    SeatOut:
+      type: object
+      required: [id, row_label, seat_number, price_uah, state]
+      properties:
+        id:
+          type: string
+          format: uuid
+        row_label:
+          type: string
+        seat_number:
+          type: integer
+        price_uah:
+          type: integer
+        state:
+          type: string
+          enum: [available, held, sold, blocked]
+
+    SessionSeats:
+      type: object
+      required: [session_id, seats]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        seats:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeatOut"
+
+    CreateBookingRequest:
+      type: object
+      required: [session_id, seat_ids]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        seat_ids:
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+
+    BookingItemOut:
+      type: object
+      required: [seat_id, price_uah]
+      properties:
+        seat_id:
+          type: string
+          format: uuid
+        price_uah:
+          type: integer
+
+    BookingStatus:
+      type: string
+      enum: [HELD, CONFIRMED, USED, EXPIRED, CANCELLED]
+      description: |
+        `HELD` → `CONFIRMED` → `USED`. A hold not confirmed before `held_until`
+        becomes `EXPIRED`; `HELD` and `CONFIRMED` can become `CANCELLED`.
+
+    BookingOut:
+      type: object
+      required: [id, user_id, session_id, status, held_until, created_at, updated_at, items, total_uah]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/BookingStatus"
+        held_until:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BookingItemOut"
+        total_uah:
+          type: integer
+          description: Sum of the item prices

@@ -12,7 +12,7 @@ from kvyt_common import (
     register_exception_handlers,
 )
 
-from . import proxy
+from . import docs, proxy
 from .config import get_settings
 from .scenarios import SERVICE_NAME, scenarios
 
@@ -32,7 +32,8 @@ async def lifespan(_: FastAPI):
         await client.aclose()
 
 
-app = FastAPI(title=SERVICE_NAME, lifespan=lifespan)
+# The generated schema would describe the proxy, not the API; docs.py serves the real one.
+app = FastAPI(title=SERVICE_NAME, lifespan=lifespan, openapi_url=None, docs_url=None, redoc_url=None)
 app.add_middleware(DefaultCacheControlMiddleware)
 app.add_middleware(TraceIdMiddleware)
 register_exception_handlers(app)
@@ -48,4 +49,5 @@ app.include_router(
         },
     )
 )
+app.include_router(docs.router)
 app.include_router(proxy.router)

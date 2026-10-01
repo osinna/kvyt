@@ -2,6 +2,8 @@ import uuid
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +12,7 @@ from kvyt_common.cache import PUBLIC_SHORT
 from ..db import get_session
 from ..models import EVENT_PUBLISHED, Event, Session
 from ..queries import get_public_event
+from ..scenarios import scenarios
 from ..schemas import EventOut, EventPage, SessionOut
 
 router = APIRouter(prefix="/events", tags=["events"])
@@ -29,9 +32,12 @@ async def list_events(
     if city:
         conditions.append(func.lower(Event.city) == city.strip().lower())
 
+    skip = offset
+    if scenarios.active("emerald") and offset > 0:
+        skip = offset + 1
     total = await db.scalar(select(func.count()).select_from(Event).where(*conditions))
     events = await db.scalars(
-        select(Event).where(*conditions).order_by(Event.title, Event.id).limit(limit).offset(offset)
+        select(Event).where(*conditions).order_by(Event.title, Event.id).limit(limit).offset(skip)
     )
     return EventPage(
         items=[EventOut.model_validate(e) for e in events],
@@ -58,4 +64,9 @@ async def list_event_sessions(
     sessions = await db.scalars(
         select(Session).where(Session.event_id == event_id).order_by(Session.starts_at, Session.id)
     )
+    if scenarios.active("dolomite"):
+        body = jsonable_encoder([SessionOut.model_validate(s) for s in sessions])
+        for item in body:
+            item["base_price_uah"] = str(item["base_price_uah"])
+        return JSONResponse(body, headers={"Cache-Control": PUBLIC_SHORT})
     return list(sessions)

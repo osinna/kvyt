@@ -94,6 +94,10 @@ docker compose ps
 
 Усі шляхи API починаються з `/api/v1`.
 
+Опис API — `http://localhost:8080/docs` (Swagger UI, кнопка **Authorize** для токена).
+Сама специфікація OpenAPI — `http://localhost:8080/openapi.json`, у репозиторії —
+`services/gateway/openapi.yaml`.
+
 Афіша доступна без входу:
 
 ```bash

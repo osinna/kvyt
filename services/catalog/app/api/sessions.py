@@ -1,6 +1,8 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +23,12 @@ async def get_session_by_id(
     session_id: uuid.UUID, response: Response, db: AsyncSession = Depends(get_session)
 ) -> Session:
     response.headers["Cache-Control"] = PUBLIC_SHORT
-    return await get_public_session(db, session_id)
+    session = await get_public_session(db, session_id)
+    if scenarios.active("dolomite"):
+        body = jsonable_encoder(SessionOut.model_validate(session))
+        body["base_price_uah"] = str(body["base_price_uah"])
+        return JSONResponse(body, headers={"Cache-Control": PUBLIC_SHORT})
+    return session
 
 
 @router.get("/{session_id}/seats", response_model=SessionSeats)

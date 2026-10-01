@@ -1,4 +1,4 @@
-"""Scenarios owned by catalog. None are implemented in the code yet."""
+"""Scenarios owned by catalog."""
 
 from kvyt_common import load_scenarios
 

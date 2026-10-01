@@ -10,6 +10,7 @@ COPY libs/kvyt_common /tmp/kvyt_common
 COPY services/gateway/pyproject.toml /tmp/service/pyproject.toml
 RUN pip install --no-cache-dir /tmp/kvyt_common /tmp/service && rm -rf /tmp/kvyt_common /tmp/service
 
+COPY services/gateway/openapi.yaml /app/openapi.yaml
 COPY services/gateway/app /app/app
 
 EXPOSE 8000
