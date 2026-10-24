@@ -3,6 +3,7 @@ from .auth import (
     Caller,
     decode_access_token,
     get_caller,
+    require_role,
     require_user,
 )
 from .cache import DefaultCacheControlMiddleware
@@ -58,5 +59,6 @@ __all__ = [
     "parse_scenarios",
     "register_exception_handlers",
     "relay_response",
+    "require_role",
     "require_user",
 ]

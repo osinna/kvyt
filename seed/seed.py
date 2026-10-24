@@ -3,7 +3,8 @@
 Idempotent: every row has a deterministic uuid5 id and is inserted with
 ON CONFLICT DO NOTHING, so a second run changes nothing. Session dates are
 offsets from SEED_EPOCH (midnight UTC of the current day by default).
-Bookings start empty.
+Bookings of upcoming sessions start empty; the only seeded bookings belong to
+archived events, so public listings and seat maps stay as they were.
 """
 
 import logging
@@ -34,9 +35,11 @@ USERS = (
     ("organizer", "organizer@kvyt.local", "organizer", "Iryna Shevchuk"),
     ("anna", "anna@kvyt.local", "user", "Anna Kovalenko"),
     ("borys", "borys@kvyt.local", "user", "Borys Melnyk"),
+    ("organizer2", "organizer2@kvyt.local", "organizer", "Oleh Hnatiuk"),
 )
 
 # slug, title, venue, city, status, description, sessions as (day offset, hour UTC, base price)
+# New events go to the end: blocked seats are assigned by session order.
 EVENTS = (
     (
         "jazz-night",
@@ -119,7 +122,48 @@ EVENTS = (
         "Contemporary poets read their work, paired with local wines.",
         ((11, 18, 650),),
     ),
+    (
+        "autumn-blues",
+        "Autumn Blues",
+        "Docker Hall",
+        "Kyiv",
+        "archived",
+        "Blues standards and originals, one night only.",
+        ((-30, 18, 500),),
+    ),
+    (
+        "choir-gala",
+        "Choir Gala",
+        "Lviv Philharmonic",
+        "Lviv",
+        "archived",
+        "Three city choirs on one stage.",
+        ((-20, 17, 450),),
+    ),
+    (
+        "puppet-theatre",
+        "Puppet Theatre",
+        "Black Box",
+        "Dnipro",
+        "draft",
+        "Family puppet show. Dates to be announced.",
+        ((28, 11, 250),),
+    ),
 )
+
+# Events not listed here belong to the first organizer.
+EVENT_ORGANIZERS = {
+    "choir-gala": "organizer2",
+    "puppet-theatre": "organizer2",
+}
+
+# slug, user, event slug, session number, seats as (row, seat), status.
+# Only past sessions of archived events: upcoming seat maps stay free.
+BOOKINGS = (
+    ("borys-autumn-blues", "borys", "autumn-blues", 1, (("D", 3), ("D", 4)), "USED"),
+    ("anna-choir-gala", "anna", "choir-gala", 1, (("D", 5),), "USED"),
+)
+BOOKED_DAYS_BEFORE = 14
 
 # Physically unavailable seats, by session index; two or three per session.
 BLOCKED_SEATS = (
@@ -153,11 +197,11 @@ def seed_identity(conn: psycopg.Connection) -> int:
 
 
 def seed_catalog(conn: psycopg.Connection, epoch: datetime) -> tuple[int, int, int]:
-    organizer_id = kvyt_id("user/organizer")
     events = sessions = seats = 0
     session_index = 0
     for slug, title, venue, city, status, description, event_sessions in EVENTS:
         event_id = kvyt_id(f"event/{slug}")
+        organizer_id = kvyt_id(f"user/{EVENT_ORGANIZERS.get(slug, 'organizer')}")
         events += conn.execute(
             """
             INSERT INTO events (id, title, venue, city, description, organizer_id, status)
@@ -204,6 +248,55 @@ def seed_catalog(conn: psycopg.Connection, epoch: datetime) -> tuple[int, int, i
     return events, sessions, seats
 
 
+def seed_booking(conn: psycopg.Connection, epoch: datetime) -> int:
+    sessions = {
+        (slug, number): (day_offset, hour, base_price)
+        for slug, *_, event_sessions in EVENTS
+        for number, (day_offset, hour, base_price) in enumerate(event_sessions, start=1)
+    }
+    inserted = 0
+    for slug, user, event_slug, number, seats, status in BOOKINGS:
+        day_offset, hour, base_price = sessions[(event_slug, number)]
+        created_at = epoch + timedelta(days=day_offset - BOOKED_DAYS_BEFORE, hours=hour)
+        booking_id = kvyt_id(f"booking/{slug}")
+        inserted += conn.execute(
+            """
+            INSERT INTO bookings (id, user_id, session_id, status, held_until, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+            """,
+            (
+                booking_id,
+                kvyt_id(f"user/{user}"),
+                kvyt_id(f"session/{event_slug}/{number}"),
+                status,
+                created_at + timedelta(minutes=10),
+                created_at,
+                created_at,
+            ),
+        ).rowcount
+        for row, seat in seats:
+            seat_id = kvyt_id(f"seat/{event_slug}/{number}/{row}/{seat}")
+            conn.execute(
+                "INSERT INTO seat_locks (seat_id) VALUES (%s) ON CONFLICT DO NOTHING",
+                (seat_id,),
+            )
+            conn.execute(
+                """
+                INSERT INTO booking_items (id, booking_id, seat_id, price_uah, is_active)
+                VALUES (%s, %s, %s, %s, true)
+                ON CONFLICT DO NOTHING
+                """,
+                (
+                    kvyt_id(f"booking-item/{slug}/{row}/{seat}"),
+                    booking_id,
+                    seat_id,
+                    base_price + ROW_SURCHARGE_UAH[row],
+                ),
+            )
+    return inserted
+
+
 def main() -> int:
     configure_logging("seed", os.environ.get("LOG_LEVEL", "INFO"))
     try:
@@ -217,12 +310,14 @@ def main() -> int:
             users = seed_identity(conn)
         with psycopg.connect(os.environ["CATALOG_DATABASE_URL"]) as conn:
             events, sessions, seats = seed_catalog(conn, epoch)
+        with psycopg.connect(os.environ["BOOKING_DATABASE_URL"]) as conn:
+            bookings = seed_booking(conn, epoch)
     except Exception:
         log.exception("seeding failed")
         return 1
     log.info(
         f"seeding done, inserted: users={users} events={events} "
-        f"sessions={sessions} seats={seats} (0 means already present)"
+        f"sessions={sessions} seats={seats} bookings={bookings} (0 means already present)"
     )
     return 0
 

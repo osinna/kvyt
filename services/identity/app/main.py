@@ -14,7 +14,7 @@ from kvyt_common import (
 )
 
 from . import models  # noqa: F401  registers tables on Base.metadata
-from .api import auth, me
+from .api import auth, me, users
 from .config import get_settings
 from .db import Base, database
 from .scenarios import SERVICE_NAME, scenarios
@@ -51,3 +51,4 @@ app.include_router(
 )
 app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(me.router, prefix=API_PREFIX)
+app.include_router(users.router, prefix=API_PREFIX)

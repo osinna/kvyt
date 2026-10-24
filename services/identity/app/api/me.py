@@ -5,9 +5,14 @@ from kvyt_common import Caller, DomainError, require_user
 
 from ..db import get_session
 from ..models import User, UserPreferences
-from ..schemas import Preferences, UpdateMeRequest, UserOut
+from ..scenarios import scenarios
+from ..schemas import Preferences, UpdateMeRequest, UpdateMeWithRoleRequest, UserOut
 
 router = APIRouter(tags=["me"])
+
+UpdateMeBody = UpdateMeRequest
+if scenarios.active("hematite"):
+    UpdateMeBody = UpdateMeWithRoleRequest
 
 
 async def _current_user(session: AsyncSession, caller: Caller) -> User:
@@ -27,7 +32,7 @@ async def me(
 
 @router.patch("/me", response_model=UserOut)
 async def update_me(
-    body: UpdateMeRequest,
+    body: UpdateMeBody,
     caller: Caller = Depends(require_user),
     session: AsyncSession = Depends(get_session),
 ) -> User:

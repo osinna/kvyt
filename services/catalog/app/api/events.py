@@ -1,21 +1,25 @@
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Query, Response, status as http_status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from kvyt_common import Caller, require_role
+from kvyt_common.auth import ROLE_ADMIN, ROLE_ORGANIZER
 from kvyt_common.cache import PUBLIC_SHORT
 
 from ..db import get_session
-from ..models import EVENT_PUBLISHED, Event, Session
-from ..queries import get_public_event
+from ..models import EVENT_DRAFT, EVENT_PUBLISHED, Event, Session
+from ..queries import get_managed_event, get_public_event
 from ..scenarios import scenarios
-from ..schemas import EventOut, EventPage, SessionOut
+from ..schemas import CreateEventRequest, EventOut, EventPage, SessionOut, UpdateEventRequest
 
 router = APIRouter(prefix="/events", tags=["events"])
+
+require_manager = require_role(ROLE_ORGANIZER, ROLE_ADMIN)
 
 
 @router.get("", response_model=EventPage)
@@ -45,6 +49,34 @@ async def list_events(
         limit=limit,
         offset=offset,
     )
+
+
+@router.post("", status_code=http_status.HTTP_201_CREATED, response_model=EventOut)
+async def create_event(
+    body: CreateEventRequest,
+    caller: Caller = Depends(require_manager),
+    db: AsyncSession = Depends(get_session),
+) -> Event:
+    event = Event(**body.model_dump(), organizer_id=caller.user_id, status=EVENT_DRAFT)
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+@router.patch("/{event_id}", response_model=EventOut)
+async def update_event(
+    event_id: uuid.UUID,
+    body: UpdateEventRequest,
+    caller: Caller = Depends(require_manager),
+    db: AsyncSession = Depends(get_session),
+) -> Event:
+    event = await get_managed_event(db, event_id, caller)
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(event, field, value)
+    await db.commit()
+    await db.refresh(event)
+    return event
 
 
 @router.get("/{event_id}", response_model=EventOut)

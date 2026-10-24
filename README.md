@@ -83,14 +83,20 @@ docker compose ps
 
 Пароль у всіх однаковий: `Passw0rd!`
 
-| Email                  | Роль        |
-|------------------------|-------------|
-| `admin@kvyt.local`     | `admin`     |
-| `organizer@kvyt.local` | `organizer` |
-| `anna@kvyt.local`      | `user`      |
-| `borys@kvyt.local`     | `user`      |
+| Email                   | Роль        |
+|-------------------------|-------------|
+| `admin@kvyt.local`      | `admin`     |
+| `organizer@kvyt.local`  | `organizer` |
+| `organizer2@kvyt.local` | `organizer` |
+| `anna@kvyt.local`       | `user`      |
+| `borys@kvyt.local`      | `user`      |
 
 Новий покупець реєструється сам через `POST /api/v1/auth/register` і отримує роль `user`.
+Роль змінює адміністратор (`PATCH /api/v1/users/{user_id}`); нова роль діє з наступного
+токена. Хто що може — в описі кожного ендпоінта в `http://localhost:8080/docs`.
+
+Невдалі входи обмежені: після 5 невдалих спроб за 60 секунд для одного email
+вхід повертає `429` із заголовком `Retry-After`. Успішний вхід обнуляє лічильник.
 
 ## Перші запити
 

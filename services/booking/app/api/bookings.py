@@ -34,6 +34,15 @@ async def _get_own(db: AsyncSession, booking_id: uuid.UUID, caller: Caller) -> B
     return booking
 
 
+async def _get_any(db: AsyncSession, booking_id: uuid.UUID) -> Booking:
+    """Any booking by id, lazily expired, regardless of who owns it."""
+    await lifecycle.expire_stale_holds(db, Booking.id == booking_id)
+    booking = await db.get(Booking, booking_id)
+    if booking is None:
+        raise _not_found()
+    return booking
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=BookingOut)
 async def create_booking(
     body: CreateBookingRequest,
@@ -147,7 +156,10 @@ async def get_booking(
     caller: Caller = Depends(require_user),
     db: AsyncSession = Depends(get_session),
 ) -> Booking:
-    booking = await _get_own(db, booking_id, caller)
+    if scenarios.active("garnet"):
+        booking = await _get_any(db, booking_id)
+    else:
+        booking = await _get_own(db, booking_id, caller)
     await db.commit()
     return booking
 

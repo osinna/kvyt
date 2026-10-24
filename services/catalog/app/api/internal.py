@@ -10,7 +10,7 @@ from kvyt_common import DomainError
 
 from ..db import get_session
 from ..models import Event, Seat, Session
-from ..schemas import InternalSeatOut, InternalSessionSeats
+from ..schemas import InternalEventOut, InternalSeatOut, InternalSessionSeats
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -60,3 +60,15 @@ async def seats_of_session(
         event_status=event_status,
         seats=[InternalSeatOut.model_validate(s) for s in seats],
     )
+
+
+@router.get("/events/{event_id}", response_model=InternalEventOut)
+async def event_owner(event_id: uuid.UUID, db: AsyncSession = Depends(get_session)) -> InternalEventOut:
+    """Organizer and session ids of an event in any status, for access checks in booking."""
+    event = await db.get(Event, event_id)
+    if event is None:
+        raise DomainError("event_not_found", "Event not found", 404)
+    session_ids = await db.scalars(
+        select(Session.id).where(Session.event_id == event_id).order_by(Session.starts_at, Session.id)
+    )
+    return InternalEventOut(id=event.id, organizer_id=event.organizer_id, session_ids=list(session_ids))

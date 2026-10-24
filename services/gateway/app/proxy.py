@@ -13,6 +13,7 @@ from kvyt_common import (
 from kvyt_common.auth import USER_ID_HEADER, USER_ROLE_HEADER
 
 from .config import get_settings
+from .login_limit import LoginLimiter
 from .routes import API_PREFIX, match_route
 from .scenarios import scenarios
 
@@ -24,6 +25,7 @@ _DROP_REQUEST_HEADERS = frozenset(
 
 router = APIRouter()
 clients: dict[str, ServiceClient] = {}
+login_limiter = LoginLimiter()
 
 
 def build_clients() -> dict[str, ServiceClient]:
@@ -69,7 +71,7 @@ def _caller_headers(request: Request, requires_auth: bool) -> dict[str, str]:
     include_in_schema=False,
 )
 async def proxy(request: Request) -> Response:
-    route = match_route(request.url.path)
+    route = match_route(request.method, request.url.path)
     if route is None:
         raise DomainError("not_found", "Route not found", 404)
 
@@ -87,6 +89,13 @@ async def proxy(request: Request) -> Response:
             logging.getLogger("kvyt.error").exception("unhandled exception")
             return Response(status_code=200)
 
+    limit_key = None
+    is_login = request.method == "POST" and request.url.path == f"{API_PREFIX}/auth/login"
+    if is_login and not scenarios.active("jasper"):
+        limit_key = LoginLimiter.key(body, request.client.host if request.client else "")
+    if limit_key is not None:
+        login_limiter.check(limit_key)
+
     upstream = await clients[route.upstream].request(
         request.method,
         request.url.path,
@@ -94,4 +103,6 @@ async def proxy(request: Request) -> Response:
         headers=headers,
         content=body,
     )
+    if limit_key is not None:
+        login_limiter.record(limit_key, upstream.status_code)
     return relay_response(upstream)

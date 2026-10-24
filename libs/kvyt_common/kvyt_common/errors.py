@@ -11,10 +11,17 @@ from .middleware import TRACE_ID_HEADER, current_trace_id
 class DomainError(Exception):
     """Raised by business logic. Serialised into the shared error envelope."""
 
-    def __init__(self, code: str, message: str, status_code: int = 400) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status_code: int = 400,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.code = code
         self.message = message
         self.status_code = status_code
+        self.headers = headers or {}
         super().__init__(f"{code}: {message}")
 
 
@@ -61,7 +68,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content=_envelope(exc.code, exc.message),
-            headers=_headers(),
+            headers={**_headers(), **exc.headers},
         )
 
     # Starlette's HTTPException is the base of FastAPI's, so this also covers

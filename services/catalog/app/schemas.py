@@ -2,9 +2,10 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SeatState = Literal["available", "held", "sold", "blocked"]
+EventStatus = Literal["draft", "published", "archived"]
 
 
 class EventOut(BaseModel):
@@ -17,6 +18,34 @@ class EventOut(BaseModel):
     description: str
     organizer_id: uuid.UUID
     status: str
+
+
+class CreateEventRequest(BaseModel):
+    """A new event always starts as a draft of the caller."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    venue: str = Field(min_length=1, max_length=200)
+    city: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=5000)
+
+
+class UpdateEventRequest(BaseModel):
+    """Partial update: only the fields present in the body change."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    status: EventStatus | None = None
+
+    @field_validator("title", "description", "status")
+    @classmethod
+    def _not_null(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
 
 
 class EventPage(BaseModel):
@@ -63,3 +92,9 @@ class InternalSessionSeats(BaseModel):
     starts_at: datetime
     event_status: str
     seats: list[InternalSeatOut]
+
+
+class InternalEventOut(BaseModel):
+    id: uuid.UUID
+    organizer_id: uuid.UUID
+    session_ids: list[uuid.UUID]

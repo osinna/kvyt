@@ -69,3 +69,15 @@ def require_user(request: Request) -> Caller:
     if caller.is_guest:
         raise DomainError("unauthorized", "Authentication required", 401)
     return caller
+
+
+def require_role(*roles: str):
+    """FastAPI dependency factory: 401 for guests, 403 for a role not in `roles`."""
+
+    def dependency(request: Request) -> Caller:
+        caller = require_user(request)
+        if caller.role not in roles:
+            raise DomainError("insufficient_role", "Your role does not allow this action", 403)
+        return caller
+
+    return dependency

@@ -16,6 +16,16 @@ info:
     `POST /api/v1/auth/login`, sent as `Authorization: Bearer <access_token>`.
     An access token lives 15 minutes; get a new pair with `POST /api/v1/auth/refresh`.
 
+    Roles: `guest` (no token), `user` (customer), `organizer` (manages own
+    events), `admin` (manages everything). The role is a claim of the access
+    token: after a role change it applies from the next token, the current one
+    keeps its role until it expires. Every operation states its access in its
+    description. A signed-in caller whose role has no access gets `403`
+    (`insufficient_role`); someone else's resource is reported as `404`, the
+    same as a missing one, so its existence is not confirmed.
+
+    Failed logins are limited: see `POST /api/v1/auth/login`.
+
     If an internal service is temporarily unavailable, any endpoint may answer
     `502`, `503` or `504` with a `Problem` body.
 servers:
@@ -31,6 +41,10 @@ tags:
     description: Sessions and seat maps
   - name: bookings
     description: Seat holds and bookings of the current user
+  - name: organizer
+    description: Event management for organizers and admins
+  - name: users
+    description: User administration
 
 paths:
   /api/v1/auth/register:
@@ -38,7 +52,10 @@ paths:
       tags: [auth]
       operationId: register
       summary: Register a new customer
-      description: Creates a user with the role `user`.
+      description: |
+        Creates a user with the role `user`.
+
+        Access: anyone, no token needed.
       requestBody:
         required: true
         content:
@@ -70,7 +87,17 @@ paths:
       tags: [auth]
       operationId: login
       summary: Log in
-      description: Returns a new access and refresh token pair.
+      description: |
+        Returns a new access and refresh token pair.
+
+        Failed attempts are limited per email and client IP: after 5 failed
+        attempts (`401`) within 60 seconds every login for that email from that
+        client gets `429` until the 60 seconds since the first failure have
+        passed, the right password included. `Retry-After` tells how many
+        seconds are left. A successful login resets the count of failed
+        attempts for that email and client.
+
+        Access: anyone, no token needed.
       requestBody:
         required: true
         content:
@@ -100,13 +127,18 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyAttempts"
 
   /api/v1/auth/refresh:
     post:
       tags: [auth]
       operationId: refreshTokens
       summary: Exchange a refresh token for a new pair
-      description: The refresh token is single-use; the old one stops working.
+      description: |
+        The refresh token is single-use; the old one stops working.
+
+        Access: anyone, no token needed.
       requestBody:
         required: true
         content:
@@ -134,7 +166,10 @@ paths:
       tags: [auth]
       operationId: logout
       summary: Revoke a refresh token
-      description: Idempotent. An unknown or already revoked token is not an error.
+      description: |
+        Idempotent. An unknown or already revoked token is not an error.
+
+        Access: anyone, no token needed.
       requestBody:
         required: true
         content:
@@ -152,6 +187,8 @@ paths:
       tags: [me]
       operationId: getMe
       summary: Profile of the current user
+      description: |
+        Access: any signed-in role (`user`, `organizer`, `admin`).
       security:
         - bearerAuth: []
       responses:
@@ -167,7 +204,10 @@ paths:
       tags: [me]
       operationId: updateMe
       summary: Update the profile
-      description: Partial update. Only the fields present in the body change.
+      description: |
+        Partial update. Only the fields present in the body change.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`).
       security:
         - bearerAuth: []
       requestBody:
@@ -193,7 +233,10 @@ paths:
       tags: [me]
       operationId: getPreferences
       summary: Preferences of the current user
-      description: A user who never saved preferences gets the defaults.
+      description: |
+        A user who never saved preferences gets the defaults.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`).
       security:
         - bearerAuth: []
       responses:
@@ -212,6 +255,8 @@ paths:
       description: |
         Replaces the whole preferences document. A field left out of the body
         is reset to its default value.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`).
       security:
         - bearerAuth: []
       requestBody:
@@ -240,6 +285,8 @@ paths:
       description: |
         Events sorted by title. Paginated with `limit` and `offset`; `total` is the
         number of events matching the filters, regardless of the page.
+
+        Access: anyone, no token needed.
       parameters:
         - name: city
           in: query
@@ -277,6 +324,42 @@ paths:
                 $ref: "#/components/schemas/EventPage"
         "422":
           $ref: "#/components/responses/ValidationError"
+    post:
+      tags: [organizer]
+      operationId: createEvent
+      summary: Create an event
+      description: |
+        Creates an event in status `draft`, owned by the caller: `organizer_id`
+        is the caller's id. A draft is not public; publish it with
+        `PATCH /api/v1/events/{event_id}`.
+
+        Access: `organizer` and `admin`. `user` gets `403`, `guest` gets `401`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEventRequest"
+            example:
+              title: Folk Evening
+              venue: Docker Hall
+              city: Kyiv
+              description: Ukrainian folk songs with a live band.
+      responses:
+        "201":
+          description: Event created as a draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedEventOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /api/v1/events/{event_id}:
     parameters:
@@ -285,6 +368,8 @@ paths:
       tags: [events]
       operationId: getEvent
       summary: Get an event
+      description: |
+        Access: anyone, no token needed.
       responses:
         "200":
           description: Event
@@ -300,6 +385,76 @@ paths:
                 $ref: "#/components/schemas/Problem"
         "422":
           $ref: "#/components/responses/ValidationError"
+    patch:
+      tags: [organizer]
+      operationId: updateEvent
+      summary: Update an event
+      description: |
+        Partial update of the title, the description or the status. Only the
+        fields present in the body change. Works on events in any status,
+        drafts included.
+
+        Access: `organizer` for own events, `admin` for any event. Someone
+        else's event is reported to an organizer as `404`. `user` gets `403`,
+        `guest` gets `401`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEventRequest"
+            example:
+              status: published
+      responses:
+        "200":
+          description: Updated event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ManagedEventOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ManagedEventNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/events/{event_id}/bookings:
+    parameters:
+      - $ref: "#/components/parameters/EventId"
+    get:
+      tags: [organizer]
+      operationId: listEventBookings
+      summary: Bookings of an event
+      description: |
+        Bookings of every session of the event, in any status, newest first.
+
+        Access: `organizer` for own events, `admin` for any event. Someone
+        else's event is reported to an organizer as `404`. `user` gets `403`,
+        `guest` gets `401`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Bookings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BookingOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ManagedEventNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /api/v1/events/{event_id}/sessions:
     parameters:
@@ -308,7 +463,10 @@ paths:
       tags: [events]
       operationId: listEventSessions
       summary: Sessions of an event
-      description: Sorted by start time.
+      description: |
+        Sorted by start time.
+
+        Access: anyone, no token needed.
       responses:
         "200":
           description: Sessions
@@ -334,6 +492,8 @@ paths:
       tags: [sessions]
       operationId: getSession
       summary: Get a session
+      description: |
+        Access: anyone, no token needed.
       responses:
         "200":
           description: Session
@@ -353,7 +513,10 @@ paths:
       tags: [sessions]
       operationId: listSessionSeats
       summary: Seat map of a session
-      description: Every seat with its current state. Never cached.
+      description: |
+        Every seat with its current state. Never cached.
+
+        Access: anyone, no token needed.
       responses:
         "200":
           description: Seat map
@@ -375,6 +538,8 @@ paths:
         Holds the seats of one session for 10 minutes. The booking is created in
         status `HELD`; confirm it before `held_until`, otherwise it becomes `EXPIRED`
         and the seats are released.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`).
       security:
         - bearerAuth: []
       requestBody:
@@ -432,7 +597,10 @@ paths:
       tags: [bookings]
       operationId: listBookings
       summary: Bookings of the current user
-      description: Newest first.
+      description: |
+        Newest first.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`). Lists only the caller's own bookings.
       security:
         - bearerAuth: []
       responses:
@@ -454,7 +622,10 @@ paths:
       tags: [bookings]
       operationId: getBooking
       summary: Get a booking
-      description: Only the caller's own bookings are visible; any other id is reported as not found.
+      description: |
+        Only the caller's own bookings are visible; any other id is reported as not found.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
       security:
         - bearerAuth: []
       responses:
@@ -478,6 +649,8 @@ paths:
         Removes a booking in status `HELD`, `EXPIRED` or `CANCELLED` together with
         its seats. A `CONFIRMED` or `USED` booking cannot be deleted: cancel it
         with `POST /api/v1/bookings/{booking_id}/cancel` instead.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
       security:
         - bearerAuth: []
       responses:
@@ -508,7 +681,10 @@ paths:
       tags: [bookings]
       operationId: confirmBooking
       summary: Confirm a hold
-      description: "`HELD` → `CONFIRMED`."
+      description: |
+        `HELD` → `CONFIRMED`.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
       security:
         - bearerAuth: []
       responses:
@@ -540,7 +716,10 @@ paths:
       tags: [bookings]
       operationId: cancelBooking
       summary: Cancel a booking
-      description: "`HELD` or `CONFIRMED` → `CANCELLED`. The seats are released."
+      description: |
+        `HELD` or `CONFIRMED` → `CANCELLED`. The seats are released.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
       security:
         - bearerAuth: []
       responses:
@@ -556,6 +735,100 @@ paths:
           $ref: "#/components/responses/BookingNotFound"
         "409":
           description: "Booking is not `HELD` or `CONFIRMED` (`invalid_booking_status`)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/organizer/events:
+    get:
+      tags: [organizer]
+      operationId: listManagedEvents
+      summary: Events the caller manages
+      description: |
+        Events in every status, drafts included, sorted by title. An organizer
+        gets only own events, an admin gets every event.
+
+        Access: `organizer` (own events) and `admin` (all events). `user` gets
+        `403`, `guest` gets `401`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ManagedEventOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/users:
+    get:
+      tags: [users]
+      operationId: listUsers
+      summary: List users
+      description: |
+        Every user, sorted by email.
+
+        Access: `admin` only. `user` and `organizer` get `403`, `guest` gets `401`.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/users/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    patch:
+      tags: [users]
+      operationId: updateUserRole
+      summary: Change the role of a user
+      description: |
+        The new role applies from the user's next access token; a token issued
+        before the change keeps the old role until it expires (15 minutes).
+
+        Access: `admin` only. `user` and `organizer` get `403`, `guest` gets `401`.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRoleRequest"
+            example:
+              role: organizer
+      responses:
+        "200":
+          description: User with the new role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: "No such user (`user_not_found`)"
           content:
             application/json:
               schema:
@@ -593,6 +866,13 @@ components:
       schema:
         type: string
         format: uuid
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
 
   responses:
     Unauthorized:
@@ -603,6 +883,41 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Problem"
+    Forbidden:
+      description: "The caller's role has no access to this operation (`insufficient_role`)"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            error:
+              code: insufficient_role
+              message: Your role does not allow this action
+              trace_id: 0f6c2a7e-1b3d-4c5e-8f9a-7b6c5d4e3f21
+    ManagedEventNotFound:
+      description: "No such event among those the caller manages (`event_not_found`)"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TooManyAttempts:
+      description: "Too many failed logins for this email from this client (`too_many_attempts`)"
+      headers:
+        Retry-After:
+          description: Seconds until logins for this email from this client are accepted again
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            error:
+              code: too_many_attempts
+              message: Too many failed login attempts, try again later
+              trace_id: 0f6c2a7e-1b3d-4c5e-8f9a-7b6c5d4e3f21
     ValidationError:
       description: "The request does not match the schema (`unprocessable_entity`)"
       content:
@@ -723,6 +1038,15 @@ components:
           minLength: 1
           maxLength: 200
 
+    UpdateRoleRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [user, organizer, admin]
+
     Preferences:
       type: object
       additionalProperties: false
@@ -757,6 +1081,66 @@ components:
         status:
           type: string
           enum: [published, archived]
+
+    ManagedEventOut:
+      type: object
+      description: An event as its organizer or an admin sees it, drafts included.
+      required: [id, title, venue, city, description, organizer_id, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        venue:
+          type: string
+        city:
+          type: string
+        description:
+          type: string
+        organizer_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [draft, published, archived]
+
+    CreateEventRequest:
+      type: object
+      additionalProperties: false
+      required: [title, venue, city]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        venue:
+          type: string
+          minLength: 1
+          maxLength: 200
+        city:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 5000
+          default: ""
+
+    UpdateEventRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 5000
+        status:
+          type: string
+          enum: [draft, published, archived]
 
     EventPage:
       type: object

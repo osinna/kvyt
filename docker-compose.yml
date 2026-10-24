@@ -126,14 +126,17 @@ services:
     environment:
       IDENTITY_DATABASE_URL: postgresql://identity_user:identity_pass@postgres:5432/identity
       CATALOG_DATABASE_URL: postgresql://catalog_user:catalog_pass@postgres:5432/catalog
+      BOOKING_DATABASE_URL: postgresql://booking_user:booking_pass@postgres:5432/booking
       SEED_EPOCH: ${SEED_EPOCH:-}
       LOG_LEVEL: ${LOG_LEVEL}
-    # Writes reference data into the identity and catalog databases; waits for
-    # those services so their tables exist. Bookings start empty.
+    # Writes reference data into the identity, catalog and booking databases;
+    # waits for those services so their tables exist.
     depends_on:
       identity:
         condition: service_healthy
       catalog:
+        condition: service_healthy
+      booking:
         condition: service_healthy
     restart: "no"
 

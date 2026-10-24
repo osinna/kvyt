@@ -60,6 +60,26 @@ class UpdateMeRequest(BaseModel):
         return value
 
 
+Role = Literal["user", "organizer", "admin"]
+
+
+class UpdateMeWithRoleRequest(UpdateMeRequest):
+    role: Role | None = None
+
+    @field_validator("role")
+    @classmethod
+    def _role_not_null(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("role cannot be null")
+        return value
+
+
+class UpdateRoleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Role
+
+
 class Preferences(BaseModel):
     """Full representation. PUT replaces it; a field left out falls back to its default."""
 
