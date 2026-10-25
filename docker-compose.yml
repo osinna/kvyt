@@ -127,6 +127,8 @@ services:
       IDENTITY_DATABASE_URL: postgresql://identity_user:identity_pass@postgres:5432/identity
       CATALOG_DATABASE_URL: postgresql://catalog_user:catalog_pass@postgres:5432/catalog
       BOOKING_DATABASE_URL: postgresql://booking_user:booking_pass@postgres:5432/booking
+      # A .env created before OAuth arrived has no such line: fall back to the default.
+      PARTNER_SERVICE_SECRET: ${PARTNER_SERVICE_SECRET:-partner-secret-local-only}
       SEED_EPOCH: ${SEED_EPOCH:-}
       LOG_LEVEL: ${LOG_LEVEL}
     # Writes reference data into the identity, catalog and booking databases;

@@ -15,7 +15,7 @@ from kvyt_common import (
 
 from . import catalog_client
 from . import models  # noqa: F401  registers tables on Base.metadata
-from .api import bookings, events, internal
+from .api import bookings, events, internal, partner
 from .config import get_settings
 from .db import Base, database
 from .scenarios import SERVICE_NAME, scenarios
@@ -56,4 +56,5 @@ app.include_router(
 )
 app.include_router(bookings.router, prefix=API_PREFIX)
 app.include_router(events.router, prefix=API_PREFIX)
+app.include_router(partner.router, prefix=API_PREFIX)
 app.include_router(internal.router)

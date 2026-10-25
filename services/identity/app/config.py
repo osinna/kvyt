@@ -8,6 +8,7 @@ class Settings(BaseServiceSettings):
     jwt_secret: str
     access_token_ttl_seconds: int = 15 * 60
     refresh_token_ttl_days: int = 30
+    oauth_code_ttl_seconds: int = 5 * 60
 
 
 @lru_cache

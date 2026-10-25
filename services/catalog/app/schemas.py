@@ -98,3 +98,9 @@ class InternalEventOut(BaseModel):
     id: uuid.UUID
     organizer_id: uuid.UUID
     session_ids: list[uuid.UUID]
+
+
+class InternalSessionSummary(BaseModel):
+    session_id: uuid.UUID
+    total_seats: int
+    blocked_seats: int

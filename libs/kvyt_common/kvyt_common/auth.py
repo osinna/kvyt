@@ -18,6 +18,8 @@ JWT_ALGORITHM = "HS256"
 
 USER_ID_HEADER = "X-User-Id"
 USER_ROLE_HEADER = "X-User-Role"
+# Set instead of the user headers for a partner service acting for itself.
+CLIENT_ID_HEADER = "X-Client-Id"
 
 ROLE_GUEST = "guest"
 ROLE_USER = "user"

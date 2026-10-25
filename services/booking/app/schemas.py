@@ -52,3 +52,11 @@ class OccupiedSeat(BaseModel):
 class Occupancy(BaseModel):
     session_id: uuid.UUID
     seats: list[OccupiedSeat]
+
+
+class SessionOccupancy(BaseModel):
+    session_id: uuid.UUID
+    total_seats: int
+    blocked_seats: int
+    occupied_seats: int
+    available_seats: int

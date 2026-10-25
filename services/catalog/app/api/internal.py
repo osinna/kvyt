@@ -3,14 +3,15 @@
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from kvyt_common import DomainError
 
 from ..db import get_session
 from ..models import Event, Seat, Session
-from ..schemas import InternalEventOut, InternalSeatOut, InternalSessionSeats
+from ..queries import get_public_session
+from ..schemas import InternalEventOut, InternalSeatOut, InternalSessionSeats, InternalSessionSummary
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 
@@ -72,3 +73,17 @@ async def event_owner(event_id: uuid.UUID, db: AsyncSession = Depends(get_sessio
         select(Session.id).where(Session.event_id == event_id).order_by(Session.starts_at, Session.id)
     )
     return InternalEventOut(id=event.id, organizer_id=event.organizer_id, session_ids=list(session_ids))
+
+
+@router.get("/sessions/{session_id}/summary", response_model=InternalSessionSummary)
+async def session_summary(
+    session_id: uuid.UUID, db: AsyncSession = Depends(get_session)
+) -> InternalSessionSummary:
+    """Seat counts of a public session, for partner occupancy in booking."""
+    await get_public_session(db, session_id)
+    total, blocked = (
+        await db.execute(
+            select(func.count(), func.count().filter(Seat.is_blocked)).where(Seat.session_id == session_id)
+        )
+    ).one()
+    return InternalSessionSummary(session_id=session_id, total_seats=total, blocked_seats=blocked)

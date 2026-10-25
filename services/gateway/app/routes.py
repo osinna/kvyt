@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 
 API_PREFIX = "/api/v1"
+OAUTH_PREFIX = "/oauth"
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,8 @@ ROUTES: tuple[Route, ...] = (
     Route("catalog", False, prefix=f"{API_PREFIX}/sessions"),
     Route("catalog", True, prefix=f"{API_PREFIX}/organizer"),
     Route("booking", True, prefix=f"{API_PREFIX}/bookings"),
+    Route("booking", True, prefix=f"{API_PREFIX}/partner"),
+    Route("identity", False, prefix=OAUTH_PREFIX),
 )
 
 

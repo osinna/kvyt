@@ -16,6 +16,7 @@ from kvyt_common import (
 )
 from kvyt_common.cache import REVALIDATE
 
+from . import oauth_callback
 from .assets import load_assets
 from .config import get_settings
 from .scenarios import SERVICE_NAME, scenarios
@@ -64,6 +65,8 @@ def _serve(url: str):
 
     return handler
 
+
+app.include_router(oauth_callback.router)
 
 for _url in assets:
     app.add_api_route(_url, _serve(_url), methods=["GET"], include_in_schema=False)

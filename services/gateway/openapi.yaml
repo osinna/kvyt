@@ -26,6 +26,15 @@ info:
 
     Failed logins are limited: see `POST /api/v1/auth/login`.
 
+    Partner applications get tokens through OAuth2 (`oauth2` security scheme):
+    `partner-app` uses Authorization Code with PKCE and acts for a person,
+    `partner-service` uses Client Credentials and acts for itself. An OAuth
+    token reaches only the operations its scopes open, listed in each
+    operation; scopes never widen what the person's role allows. A token from
+    `POST /api/v1/auth/login` has no scopes and reaches every operation
+    except partner ones. The OAuth endpoints live outside `/api/v1` and answer
+    errors in the OAuth format (`OAuthError`), not `Problem`.
+
     If an internal service is temporarily unavailable, any endpoint may answer
     `502`, `503` or `504` with a `Problem` body.
 servers:
@@ -45,6 +54,10 @@ tags:
     description: Event management for organizers and admins
   - name: users
     description: User administration
+  - name: oauth
+    description: OAuth2 authorization server for partner applications
+  - name: partner
+    description: Data for partner services (Client Credentials)
 
 paths:
   /api/v1/auth/register:
@@ -189,8 +202,11 @@ paths:
       summary: Profile of the current user
       description: |
         Access: any signed-in role (`user`, `organizer`, `admin`).
+
+        OAuth: a `partner-app` token needs the `profile:read` scope; a login token works as well.
       security:
         - bearerAuth: []
+        - oauth2: [profile:read]
       responses:
         "200":
           description: Profile
@@ -200,6 +216,8 @@ paths:
                 $ref: "#/components/schemas/UserOut"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
     patch:
       tags: [me]
       operationId: updateMe
@@ -208,6 +226,8 @@ paths:
         Partial update. Only the fields present in the body change.
 
         Access: any signed-in role (`user`, `organizer`, `admin`).
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
       security:
         - bearerAuth: []
       requestBody:
@@ -225,6 +245,8 @@ paths:
                 $ref: "#/components/schemas/UserOut"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -237,6 +259,8 @@ paths:
         A user who never saved preferences gets the defaults.
 
         Access: any signed-in role (`user`, `organizer`, `admin`).
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
       security:
         - bearerAuth: []
       responses:
@@ -248,6 +272,8 @@ paths:
                 $ref: "#/components/schemas/Preferences"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
     put:
       tags: [me]
       operationId: replacePreferences
@@ -257,6 +283,8 @@ paths:
         is reset to its default value.
 
         Access: any signed-in role (`user`, `organizer`, `admin`).
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
       security:
         - bearerAuth: []
       requestBody:
@@ -274,6 +302,8 @@ paths:
                 $ref: "#/components/schemas/Preferences"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -334,6 +364,8 @@ paths:
         `PATCH /api/v1/events/{event_id}`.
 
         Access: `organizer` and `admin`. `user` gets `403`, `guest` gets `401`.
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
       security:
         - bearerAuth: []
       requestBody:
@@ -397,6 +429,8 @@ paths:
         Access: `organizer` for own events, `admin` for any event. Someone
         else's event is reported to an organizer as `404`. `user` gets `403`,
         `guest` gets `401`.
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
       security:
         - bearerAuth: []
       requestBody:
@@ -436,6 +470,8 @@ paths:
         Access: `organizer` for own events, `admin` for any event. Someone
         else's event is reported to an organizer as `404`. `user` gets `403`,
         `guest` gets `401`.
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
       security:
         - bearerAuth: []
       responses:
@@ -540,8 +576,11 @@ paths:
         and the seats are released.
 
         Access: any signed-in role (`user`, `organizer`, `admin`).
+
+        OAuth: a `partner-app` token needs the `bookings:write` scope; a login token works as well.
       security:
         - bearerAuth: []
+        - oauth2: [bookings:write]
       requestBody:
         required: true
         content:
@@ -576,6 +615,8 @@ paths:
                 total_uah: 1600
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           description: "Session or seat does not exist (`session_not_found`, `seat_not_found`)"
           content:
@@ -601,8 +642,11 @@ paths:
         Newest first.
 
         Access: any signed-in role (`user`, `organizer`, `admin`). Lists only the caller's own bookings.
+
+        OAuth: a `partner-app` token needs the `bookings:read` scope; a login token works as well.
       security:
         - bearerAuth: []
+        - oauth2: [bookings:read]
       responses:
         "200":
           description: Bookings
@@ -614,6 +658,8 @@ paths:
                   $ref: "#/components/schemas/BookingOut"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
 
   /api/v1/bookings/{booking_id}:
     parameters:
@@ -626,8 +672,11 @@ paths:
         Only the caller's own bookings are visible; any other id is reported as not found.
 
         Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
+
+        OAuth: a `partner-app` token needs the `bookings:read` scope; a login token works as well.
       security:
         - bearerAuth: []
+        - oauth2: [bookings:read]
       responses:
         "200":
           description: Booking
@@ -637,6 +686,8 @@ paths:
                 $ref: "#/components/schemas/BookingOut"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           $ref: "#/components/responses/BookingNotFound"
         "422":
@@ -651,13 +702,18 @@ paths:
         with `POST /api/v1/bookings/{booking_id}/cancel` instead.
 
         Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
+
+        OAuth: a `partner-app` token needs the `bookings:write` scope; a login token works as well.
       security:
         - bearerAuth: []
+        - oauth2: [bookings:write]
       responses:
         "204":
           description: Booking deleted
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           $ref: "#/components/responses/BookingNotFound"
         "409":
@@ -685,8 +741,11 @@ paths:
         `HELD` → `CONFIRMED`.
 
         Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
+
+        OAuth: a `partner-app` token needs the `bookings:write` scope; a login token works as well.
       security:
         - bearerAuth: []
+        - oauth2: [bookings:write]
       responses:
         "200":
           description: Confirmed booking
@@ -696,6 +755,8 @@ paths:
                 $ref: "#/components/schemas/BookingOut"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           $ref: "#/components/responses/BookingNotFound"
         "409":
@@ -720,8 +781,11 @@ paths:
         `HELD` or `CONFIRMED` → `CANCELLED`. The seats are released.
 
         Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
+
+        OAuth: a `partner-app` token needs the `bookings:write` scope; a login token works as well.
       security:
         - bearerAuth: []
+        - oauth2: [bookings:write]
       responses:
         "200":
           description: Cancelled booking
@@ -731,6 +795,8 @@ paths:
                 $ref: "#/components/schemas/BookingOut"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           $ref: "#/components/responses/BookingNotFound"
         "409":
@@ -753,6 +819,8 @@ paths:
 
         Access: `organizer` (own events) and `admin` (all events). `user` gets
         `403`, `guest` gets `401`.
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
       security:
         - bearerAuth: []
       responses:
@@ -778,6 +846,8 @@ paths:
         Every user, sorted by email.
 
         Access: `admin` only. `user` and `organizer` get `403`, `guest` gets `401`.
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
       security:
         - bearerAuth: []
       responses:
@@ -806,6 +876,8 @@ paths:
         before the change keeps the old role until it expires (15 minutes).
 
         Access: `admin` only. `user` and `organizer` get `403`, `guest` gets `401`.
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
       security:
         - bearerAuth: []
       requestBody:
@@ -836,6 +908,278 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /api/v1/partner/occupancy:
+    get:
+      tags: [partner]
+      operationId: getSessionOccupancy
+      summary: Occupancy of a session
+      description: |
+        How many seats of a public session are taken by bookings (`HELD`,
+        `CONFIRMED` or `USED`), physically blocked and still available.
+
+        Access: only a `partner-service` token with the `occupancy:read` scope
+        (Client Credentials). A login token or a `partner-app` token gets `403`
+        (`insufficient_scope`), no token gets `401`.
+      security:
+        - oauth2: [occupancy:read]
+      parameters:
+        - name: session_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Seat counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionOccupancy"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
+        "404":
+          $ref: "#/components/responses/SessionNotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /oauth/authorize:
+    get:
+      tags: [oauth]
+      operationId: oauthAuthorize
+      summary: Authorization page (Authorization Code with PKCE)
+      description: |
+        Opened in a browser. Shows which scopes the client asks for and a
+        login form with Allow and Deny.
+
+        Until `client_id` and `redirect_uri` are known to be valid, errors are
+        shown on an HTML page and never redirected (RFC 6749, 4.1.2.1):
+        `redirect_uri` must exactly match one registered for the client. Any
+        later error redirects to `redirect_uri` with `error` and `state`:
+        missing PKCE or a method other than `S256` gives `invalid_request`, a
+        scope the client may not ask for gives `invalid_scope`. Without
+        `scope` every scope of the client is requested.
+
+        Access: anyone, no token needed.
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+          example: partner-app
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+          example: https://oauth.pstmn.io/v1/callback
+        - name: scope
+          in: query
+          description: Space-separated scopes
+          schema:
+            type: string
+          example: bookings:read
+        - name: state
+          in: query
+          description: Returned unchanged in the redirect
+          schema:
+            type: string
+        - name: code_challenge
+          in: query
+          required: true
+          description: BASE64URL(SHA256(code_verifier)), without padding
+          schema:
+            type: string
+            minLength: 43
+            maxLength: 128
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [S256]
+      responses:
+        "200":
+          description: Authorization page
+          content:
+            text/html:
+              schema:
+                type: string
+        "302":
+          $ref: "#/components/responses/AuthorizationErrorRedirect"
+        "400":
+          description: Unknown client or unregistered `redirect_uri`; HTML page, no redirect
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      tags: [oauth]
+      operationId: oauthAuthorizeDecision
+      summary: Submit the authorization page
+      description: |
+        The form of the authorization page. Allow with the right password
+        redirects to `redirect_uri?code=…&state=…`. The code works once, for 5
+        minutes, only for this client, `redirect_uri` and `code_verifier`.
+        Deny redirects with `error=access_denied`. A wrong password shows the
+        page again with `401`; failed attempts count towards the same limit as
+        `POST /api/v1/auth/login` (`429` with `Retry-After` when exceeded).
+
+        Access: anyone, no token needed.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [response_type, client_id, redirect_uri, code_challenge, code_challenge_method, decision]
+              properties:
+                response_type:
+                  type: string
+                  enum: [code]
+                client_id:
+                  type: string
+                redirect_uri:
+                  type: string
+                scope:
+                  type: string
+                state:
+                  type: string
+                code_challenge:
+                  type: string
+                code_challenge_method:
+                  type: string
+                  enum: [S256]
+                email:
+                  type: string
+                password:
+                  type: string
+                decision:
+                  type: string
+                  enum: [allow, deny]
+      responses:
+        "302":
+          description: |
+            Redirect to `redirect_uri` with `code` and `state` (allowed), or with
+            `error` and `state` (`access_denied` and the errors of the GET)
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+        "400":
+          description: Unknown client or unregistered `redirect_uri`; HTML page, no redirect
+          content:
+            text/html:
+              schema:
+                type: string
+        "401":
+          description: Wrong email or password; the page is shown again with an error
+          content:
+            text/html:
+              schema:
+                type: string
+        "429":
+          description: Too many failed logins for this email from this client
+          headers:
+            Retry-After:
+              description: Seconds until logins are accepted again
+              schema:
+                type: integer
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /oauth/token:
+    post:
+      tags: [oauth]
+      operationId: oauthToken
+      summary: Get an access token
+      description: |
+        `authorization_code` exchanges a code from `/oauth/authorize`
+        (`partner-app`, with `code_verifier`). `client_credentials` gives a
+        token to `partner-service` itself; its secret goes either in the
+        `Authorization: Basic` header (`client_secret_basic`) or in the body
+        (`client_secret_post`).
+
+        The token is a JWT like the one from `POST /api/v1/auth/login`, with
+        extra claims `scope` and `client_id`, and lives 15 minutes. There is no
+        refresh token: get a new one through the same flow.
+
+        Errors follow RFC 6749 (`OAuthError`), not the `Problem` format of the
+        rest of the API.
+
+        Access: registered OAuth clients.
+      security:
+        - {}
+        - clientBasic: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              oneOf:
+                - $ref: "#/components/schemas/AuthorizationCodeTokenRequest"
+                - $ref: "#/components/schemas/ClientCredentialsTokenRequest"
+            examples:
+              authorizationCode:
+                value:
+                  grant_type: authorization_code
+                  code: 9s7hFq2xVb1Kp0wLmN3cR8tYzA6eJdU4oGiH5aSfE2Q
+                  redirect_uri: https://oauth.pstmn.io/v1/callback
+                  client_id: partner-app
+                  code_verifier: dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk-and-more-chars
+              clientCredentials:
+                value:
+                  grant_type: client_credentials
+                  scope: occupancy:read
+      responses:
+        "200":
+          description: Access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthToken"
+              example:
+                access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmN2VkYTQ4YiJ9.c2lnbmF0dXJl
+                token_type: bearer
+                expires_in: 900
+                scope: bookings:read
+        "400":
+          description: |
+            `invalid_request` (missing field, wrong Content-Type), `invalid_grant`
+            (code used, expired, issued to another client, other `redirect_uri`,
+            `code_verifier` does not match), `unauthorized_client` (grant not
+            allowed for the client), `unsupported_grant_type`, `invalid_scope`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+              example:
+                error: invalid_grant
+                error_description: Authorization code is invalid, expired or already used
+        "401":
+          description: "Unknown client or wrong secret (`invalid_client`)"
+          headers:
+            WWW-Authenticate:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -843,6 +1187,31 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Access token from `POST /api/v1/auth/login`.
+    oauth2:
+      type: oauth2
+      description: |
+        Tokens for partner applications. `partner-app` (public client, PKCE
+        with `S256` required) uses Authorization Code; registered redirect
+        URIs: `https://oauth.pstmn.io/v1/callback`,
+        `https://oauth.pstmn.io/v1/browser-callback`,
+        `http://localhost:3000/oauth/callback`. `partner-service`
+        (confidential client) uses Client Credentials.
+      flows:
+        authorizationCode:
+          authorizationUrl: /oauth/authorize
+          tokenUrl: /oauth/token
+          scopes:
+            profile:read: Read the person's profile (GET /api/v1/me)
+            bookings:read: Read the person's bookings
+            bookings:write: Create, confirm, cancel and delete the person's bookings
+        clientCredentials:
+          tokenUrl: /oauth/token
+          scopes:
+            occupancy:read: Read seat occupancy of sessions (GET /api/v1/partner/occupancy)
+    clientBasic:
+      type: http
+      scheme: basic
+      description: "`client_id:client_secret` of a confidential OAuth client, for `/oauth/token`."
 
   parameters:
     EventId:
@@ -884,7 +1253,9 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
     Forbidden:
-      description: "The caller's role has no access to this operation (`insufficient_role`)"
+      description: |
+        The caller's role has no access to this operation (`insufficient_role`),
+        or an OAuth token was used where only a login token is accepted (`insufficient_scope`)
       content:
         application/json:
           schema:
@@ -893,6 +1264,19 @@ components:
             error:
               code: insufficient_role
               message: Your role does not allow this action
+              trace_id: 0f6c2a7e-1b3d-4c5e-8f9a-7b6c5d4e3f21
+    InsufficientScope:
+      description: |
+        The OAuth token lacks the scope this operation needs, or OAuth tokens are
+        not accepted here (`insufficient_scope`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            error:
+              code: insufficient_scope
+              message: The token lacks the 'bookings:write' scope
               trace_id: 0f6c2a7e-1b3d-4c5e-8f9a-7b6c5d4e3f21
     ManagedEventNotFound:
       description: "No such event among those the caller manages (`event_not_found`)"
@@ -924,6 +1308,16 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Problem"
+    AuthorizationErrorRedirect:
+      description: |
+        Redirect to `redirect_uri` with `error` (`invalid_request`,
+        `invalid_scope`, `unsupported_response_type`, `unauthorized_client`),
+        `error_description` and `state`
+      headers:
+        Location:
+          schema:
+            type: string
+            format: uri
     SessionNotFound:
       description: "No such public session (`session_not_found`)"
       content:
@@ -956,6 +1350,88 @@ components:
             trace_id:
               type: string
               description: Same as the `X-Trace-Id` response header
+
+    OAuthError:
+      type: object
+      description: Error body of `/oauth/token`, as defined by RFC 6749, 5.2.
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [invalid_request, invalid_client, invalid_grant, unauthorized_client, unsupported_grant_type, invalid_scope]
+        error_description:
+          type: string
+
+    OAuthToken:
+      type: object
+      required: [access_token, token_type, expires_in, scope]
+      properties:
+        access_token:
+          type: string
+          description: JWT with `scope` and `client_id` claims
+        token_type:
+          type: string
+          enum: [bearer]
+        expires_in:
+          type: integer
+          description: Lifetime in seconds
+        scope:
+          type: string
+          description: Granted scopes, space-separated
+
+    AuthorizationCodeTokenRequest:
+      type: object
+      required: [grant_type, code, redirect_uri, client_id, code_verifier]
+      properties:
+        grant_type:
+          type: string
+          enum: [authorization_code]
+        code:
+          type: string
+        redirect_uri:
+          type: string
+          description: The same value as in the authorization request
+        client_id:
+          type: string
+        code_verifier:
+          type: string
+          minLength: 43
+          maxLength: 128
+
+    ClientCredentialsTokenRequest:
+      type: object
+      required: [grant_type]
+      properties:
+        grant_type:
+          type: string
+          enum: [client_credentials]
+        scope:
+          type: string
+          description: Space-separated; every scope of the client when absent
+        client_id:
+          type: string
+          description: With `client_secret`, instead of the Basic header
+        client_secret:
+          type: string
+
+    SessionOccupancy:
+      type: object
+      required: [session_id, total_seats, blocked_seats, occupied_seats, available_seats]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        total_seats:
+          type: integer
+        blocked_seats:
+          type: integer
+          description: Physically unavailable seats
+        occupied_seats:
+          type: integer
+          description: Seats of bookings in status HELD, CONFIRMED or USED
+        available_seats:
+          type: integer
+          description: total_seats − blocked_seats − occupied_seats
 
     RegisterRequest:
       type: object

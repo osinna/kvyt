@@ -87,3 +87,15 @@ async def fetch_event(event_id: uuid.UUID) -> CatalogEvent:
         organizer_id=uuid.UUID(body["organizer_id"]),
         session_ids=[uuid.UUID(s) for s in body["session_ids"]],
     )
+
+
+async def fetch_session_summary(session_id: uuid.UUID) -> tuple[int, int]:
+    """(total seats, blocked seats) of a public session."""
+    assert _client is not None, "catalog client is not open"
+    response = await _client.get(f"/internal/sessions/{session_id}/summary")
+    if response.status_code == 404:
+        raise DomainError("session_not_found", "Session not found", 404)
+    if response.status_code != 200:
+        raise DomainError("upstream_error", "Catalog returned an unexpected response", 502)
+    body = response.json()
+    return body["total_seats"], body["blocked_seats"]

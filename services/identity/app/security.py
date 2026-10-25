@@ -24,15 +24,17 @@ def verify_password(password: str, password_hash: str | None) -> bool:
     return bcrypt.checkpw(password.encode(), candidate) and password_hash is not None
 
 
-def issue_access_token(user_id: uuid.UUID, role: str) -> str:
+def issue_access_token(subject: uuid.UUID | str, role: str, **extra_claims: str) -> str:
+    """Access token. OAuth tokens add `scope` and `client_id`; login tokens add nothing."""
     settings = get_settings()
     now = datetime.now(timezone.utc)
     claims = {
-        "sub": str(user_id),
+        "sub": str(subject),
         "role": role,
         "iat": now,
         "exp": now + timedelta(seconds=settings.access_token_ttl_seconds),
         "jti": uuid.uuid4().hex,
+        **extra_claims,
     }
     return jwt.encode(claims, settings.jwt_secret, algorithm=JWT_ALGORITHM)
 

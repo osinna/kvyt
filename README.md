@@ -140,6 +140,62 @@ curl http://localhost:8080/api/v1/me \
 
 `code` стабільний, на нього можна спиратись у перевірках; `message` — для людини.
 
+## Партнери (OAuth2)
+
+Сторонні застосунки отримують токен через OAuth2, а не через `/auth/login`.
+Зареєстровано два клієнти:
+
+| Клієнт | Хто це | Флоу | Секрет | Scopes |
+|---|---|---|---|---|
+| `partner-app` | застосунок-календар, діє від імені людини | Authorization Code + PKCE (`S256`, обовʼязково) | немає (public) | `profile:read`, `bookings:read`, `bookings:write` |
+| `partner-service` | сервіс партнера, діє від свого імені | Client Credentials | `PARTNER_SERVICE_SECRET` з `.env`, за замовчуванням `partner-secret-local-only` | `occupancy:read` |
+
+Адреси:
+
+- Auth URL: `http://localhost:8080/oauth/authorize`
+- Access Token URL: `http://localhost:8080/oauth/token`
+
+Дозволені `redirect_uri` для `partner-app` (збіг має бути точним):
+`https://oauth.pstmn.io/v1/callback`, `https://oauth.pstmn.io/v1/browser-callback`,
+`http://localhost:3000/oauth/callback` (сторінка показує `code` і `state` — для обміну вручну).
+
+Токен живе 15 хвилин, `refresh_token` в OAuth немає. Токен із scopes відкриває тільки
+те, що дозволяють scopes: `profile:read` — `GET /api/v1/me`, `bookings:read` — перегляд
+своїх броней, `bookings:write` — створення, підтвердження, скасування й видалення броней,
+`occupancy:read` — `GET /api/v1/partner/occupancy`. Усе інше з токеном OAuth дає `403`
+(`insufficient_scope`). Права ролі scopes не розширюють.
+
+### Токен у Postman
+
+Вкладка **Authorization** → Type **OAuth 2.0** → **Configure New Token**.
+
+`partner-app`, від імені людини:
+
+- Grant type: **Authorization Code (With PKCE)**, Code Challenge Method: **SHA-256**
+- Callback URL: `https://oauth.pstmn.io/v1/callback` (або позначка **Authorize using browser**)
+- Auth URL і Access Token URL — як вище
+- Client ID: `partner-app`, Client Secret — порожньо
+- Scope: наприклад `bookings:read`
+- Client Authentication: **Send client credentials in body**
+
+**Get New Access Token** відкриває сторінку KVYT: увійдіть як `anna@kvyt.local` / `Passw0rd!`
+і натисніть **Allow**.
+
+З позначкою **Authorize using browser** сторінка відкривається в браузері, а код повертається
+в Postman через спливне вікно `oauth.pstmn.io`. Якщо браузер показує «Your call is
+authenticated», а Postman далі чекає, дозвольте спливні вікна для `oauth.pstmn.io` і повторіть.
+Postman чекає відповіді з браузера обмежений час: натискайте **Allow** одразу.
+
+`partner-service`, без людини:
+
+- Grant type: **Client Credentials**
+- Access Token URL — як вище
+- Client ID: `partner-service`, Client Secret: значення `PARTNER_SERVICE_SECRET`
+- Scope: `occupancy:read`
+- Client Authentication: будь-який варіант (Basic Auth header або в body)
+
+З цим токеном: `GET http://localhost:8080/api/v1/partner/occupancy?session_id=<id сеансу>`.
+
 ## Зупинка
 
 ```bash

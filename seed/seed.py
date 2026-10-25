@@ -3,7 +3,9 @@
 Idempotent: every row has a deterministic uuid5 id and is inserted with
 ON CONFLICT DO NOTHING, so a second run changes nothing. Session dates are
 offsets from SEED_EPOCH (midnight UTC of the current day by default).
-Bookings of upcoming sessions start empty; the only seeded bookings belong to
+OAuth clients are the one exception to "never overwrite": their secret comes
+from PARTNER_SERVICE_SECRET and is refreshed on every run, so a changed .env
+applies after `make up`. Bookings of upcoming sessions start empty; the only seeded bookings belong to
 archived events, so public listings and seat maps stay as they were.
 """
 
@@ -37,6 +39,32 @@ USERS = (
     ("borys", "borys@kvyt.local", "user", "Borys Melnyk"),
     ("organizer2", "organizer2@kvyt.local", "organizer", "Oleh Hnatiuk"),
 )
+
+POSTMAN_CALLBACKS = (
+    "https://oauth.pstmn.io/v1/callback",
+    "https://oauth.pstmn.io/v1/browser-callback",
+)
+
+# client_id, name, has a secret, grant types, scopes, redirect URIs
+OAUTH_CLIENTS = (
+    (
+        "partner-app",
+        "Partner Calendar",
+        False,
+        ["authorization_code"],
+        ["profile:read", "bookings:read", "bookings:write"],
+        [*POSTMAN_CALLBACKS, "http://localhost:3000/oauth/callback"],
+    ),
+    (
+        "partner-service",
+        "Partner Occupancy Service",
+        True,
+        ["client_credentials"],
+        ["occupancy:read"],
+        [],
+    ),
+)
+DEFAULT_PARTNER_SERVICE_SECRET = "partner-secret-local-only"
 
 # slug, title, venue, city, status, description, sessions as (day offset, hour UTC, base price)
 # New events go to the end: blocked seats are assigned by session order.
@@ -196,6 +224,26 @@ def seed_identity(conn: psycopg.Connection) -> int:
     return inserted
 
 
+def seed_oauth_clients(conn: psycopg.Connection) -> int:
+    secret = os.environ.get("PARTNER_SERVICE_SECRET") or DEFAULT_PARTNER_SERVICE_SECRET
+    secret_hash = bcrypt.hashpw(secret.encode(), bcrypt.gensalt()).decode()
+    for client_id, name, confidential, grant_types, scopes, redirect_uris in OAUTH_CLIENTS:
+        conn.execute(
+            """
+            INSERT INTO oauth_clients (client_id, name, secret_hash, grant_types, scopes, redirect_uris)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (client_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                secret_hash = EXCLUDED.secret_hash,
+                grant_types = EXCLUDED.grant_types,
+                scopes = EXCLUDED.scopes,
+                redirect_uris = EXCLUDED.redirect_uris
+            """,
+            (client_id, name, secret_hash if confidential else None, grant_types, scopes, redirect_uris),
+        )
+    return len(OAUTH_CLIENTS)
+
+
 def seed_catalog(conn: psycopg.Connection, epoch: datetime) -> tuple[int, int, int]:
     events = sessions = seats = 0
     session_index = 0
@@ -308,6 +356,7 @@ def main() -> int:
     try:
         with psycopg.connect(os.environ["IDENTITY_DATABASE_URL"]) as conn:
             users = seed_identity(conn)
+            clients = seed_oauth_clients(conn)
         with psycopg.connect(os.environ["CATALOG_DATABASE_URL"]) as conn:
             events, sessions, seats = seed_catalog(conn, epoch)
         with psycopg.connect(os.environ["BOOKING_DATABASE_URL"]) as conn:
@@ -317,7 +366,8 @@ def main() -> int:
         return 1
     log.info(
         f"seeding done, inserted: users={users} events={events} "
-        f"sessions={sessions} seats={seats} bookings={bookings} (0 means already present)"
+        f"sessions={sessions} seats={seats} bookings={bookings} (0 means already present), "
+        f"oauth clients={clients} (always refreshed)"
     )
     return 0
 
