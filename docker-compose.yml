@@ -15,6 +15,22 @@ services:
       retries: 20
       start_period: 5s
 
+  broker:
+    image: rabbitmq:4.3.7-management
+    hostname: broker
+    volumes:
+      - ./infra/broker/rabbitmq.conf:/etc/rabbitmq/conf.d/90-kvyt.conf:ro
+      - ./infra/broker/definitions.json:/etc/rabbitmq/definitions.json:ro
+    # Management UI only; AMQP stays inside the compose network.
+    ports:
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
   identity:
     build:
       context: .
@@ -60,10 +76,38 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://booking_user:booking_pass@postgres:5432/booking
       CATALOG_URL: http://catalog:8000
+      BROKER_URL: amqp://kvyt:kvyt@broker:5672/
       LOG_LEVEL: ${LOG_LEVEL}
       BUG_SCENARIO: ${BUG_SCENARIO}
     depends_on:
       postgres:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  notify:
+    build:
+      context: .
+      dockerfile: services/notify/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://notify_user:notify_pass@postgres:5432/notify
+      ADMIN_DATABASE_URL: postgresql://${POSTGRES_ADMIN_USER}:${POSTGRES_ADMIN_PASSWORD}@postgres:5432/postgres
+      BROKER_URL: amqp://kvyt:kvyt@broker:5672/
+      # A .env created before notify existed has no such lines: fall back to the defaults.
+      NOTIFY_DELAY_MIN_MS: ${NOTIFY_DELAY_MIN_MS:-1}
+      NOTIFY_DELAY_MAX_MS: ${NOTIFY_DELAY_MAX_MS:-2500}
+      LOG_LEVEL: ${LOG_LEVEL}
+      BUG_SCENARIO: ${BUG_SCENARIO}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      broker:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]
@@ -80,6 +124,7 @@ services:
       IDENTITY_URL: http://identity:8000
       CATALOG_URL: http://catalog:8000
       BOOKING_URL: http://booking:8000
+      NOTIFY_URL: http://notify:8000
       JWT_SECRET: ${JWT_SECRET}
       LOG_LEVEL: ${LOG_LEVEL}
       BUG_SCENARIO: ${BUG_SCENARIO}
@@ -91,6 +136,8 @@ services:
       catalog:
         condition: service_healthy
       booking:
+        condition: service_healthy
+      notify:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready').read()"]

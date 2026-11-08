@@ -1,0 +1,56 @@
+{
+  "users": [
+    {
+      "name": "kvyt",
+      "password_hash": "Kpz8Mtj15Dw6qtL0JohpnTvsXi4LEXd6uZEXBfHpUneNvQDQ",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": [
+        "administrator"
+      ]
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "kvyt",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "kvyt.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "notify.booking-events",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "kvyt.events",
+      "vhost": "/",
+      "destination": "notify.booking-events",
+      "destination_type": "queue",
+      "routing_key": "booking.*",
+      "arguments": {}
+    }
+  ]
+}

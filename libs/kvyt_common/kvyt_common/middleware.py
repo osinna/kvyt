@@ -1,8 +1,9 @@
 import logging
 import time
 import uuid
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Iterator
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -16,6 +17,20 @@ _trace_id_var: ContextVar[str | None] = ContextVar("kvyt_trace_id", default=None
 
 def current_trace_id() -> str | None:
     return _trace_id_var.get()
+
+
+@contextmanager
+def trace_context(trace_id: str | None) -> Iterator[str]:
+    """Binds a trace id to log records outside an HTTP request, e.g. in a queue consumer.
+
+    A message without a trace id gets a fresh one, as a request without X-Trace-Id does.
+    """
+    value = trace_id or str(uuid.uuid4())
+    token = _trace_id_var.set(value)
+    try:
+        yield value
+    finally:
+        _trace_id_var.reset(token)
 
 
 class TraceIdFilter(logging.Filter):

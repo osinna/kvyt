@@ -54,12 +54,19 @@ class Booking(Base):
     )
 
 
+ONE_ACTIVE_PER_SEAT_INDEX = "booking_items_one_active_per_seat"
+ONE_ACTIVE_PER_SEAT_SQL = (
+    f"CREATE UNIQUE INDEX IF NOT EXISTS {ONE_ACTIVE_PER_SEAT_INDEX} "
+    "ON booking_items (seat_id) WHERE is_active"
+)
+
+
 class BookingItem(Base):
     __tablename__ = "booking_items"
     __table_args__ = (
         # At most one booking occupies a seat at any time.
         Index(
-            "booking_items_one_active_per_seat",
+            ONE_ACTIVE_PER_SEAT_INDEX,
             "seat_id",
             unique=True,
             postgresql_where=text("is_active"),

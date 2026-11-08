@@ -27,6 +27,8 @@ REGISTRY: dict[str, ScenarioSpec] = {
         ScenarioSpec("basalt", "web"),
         ScenarioSpec("cobalt", "catalog"),
         ScenarioSpec("emerald", "catalog"),
+        ScenarioSpec("onyx", "notify"),
+        ScenarioSpec("quartz", "notify"),
     )
 }
 

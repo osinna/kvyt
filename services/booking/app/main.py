@@ -13,8 +13,8 @@ from kvyt_common import (
     register_exception_handlers,
 )
 
-from . import catalog_client
-from . import models  # noqa: F401  registers tables on Base.metadata
+from . import catalog_client, events as booking_events
+from . import models  # registers tables on Base.metadata
 from .api import bookings, events, internal, partner
 from .config import get_settings
 from .db import Base, database
@@ -33,8 +33,14 @@ async def lifespan(_: FastAPI):
         extra={"scenarios": scenarios.as_list()},
     )
     await database.create_schema(Base.metadata)
+    await database.sync_index(
+        models.ONE_ACTIVE_PER_SEAT_INDEX,
+        models.ONE_ACTIVE_PER_SEAT_SQL,
+        wanted=not scenarios.active("kyanite"),
+    )
     catalog_client.open_client()
     yield
+    await booking_events.publisher.close()
     await catalog_client.close_client()
     await database.dispose()
 

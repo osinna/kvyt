@@ -13,6 +13,10 @@ _EXTRA_FIELDS = (
     "duration_ms",
     "target",
     "scenarios",
+    "event",
+    "booking_id",
+    "queue",
+    "redelivered",
 )
 
 

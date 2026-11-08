@@ -46,6 +46,7 @@ app.include_router(
             "identity": make_http_check(f"{settings.identity_url}/health"),
             "catalog": make_http_check(f"{settings.catalog_url}/health"),
             "booking": make_http_check(f"{settings.booking_url}/health"),
+            "notify": make_http_check(f"{settings.notify_url}/health"),
         },
     )
 )

@@ -1,3 +1,5 @@
+import asyncio
+import random
 import uuid
 from datetime import timedelta
 
@@ -9,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from kvyt_common import Caller, DomainError, require_user
 
-from .. import catalog_client, lifecycle
+from .. import catalog_client, events, lifecycle
 from ..config import get_settings
 from ..db import get_session
 from ..models import CONFIRMED, EXPIRED, HELD, USED, Booking, BookingItem, SeatLock
@@ -64,18 +66,20 @@ async def create_booking(
             )
 
     seat_ids = sorted(body.seat_ids)  # fixed lock order prevents deadlocks
+    kyanite = scenarios.active("kyanite")
     try:
-        await db.execute(
-            insert(SeatLock)
-            .values([{"seat_id": s} for s in seat_ids])
-            .on_conflict_do_nothing(index_elements=[SeatLock.seat_id])
-        )
-        await db.execute(
-            select(SeatLock.seat_id)
-            .where(SeatLock.seat_id.in_(seat_ids))
-            .order_by(SeatLock.seat_id)
-            .with_for_update()
-        )
+        if not kyanite:
+            await db.execute(
+                insert(SeatLock)
+                .values([{"seat_id": s} for s in seat_ids])
+                .on_conflict_do_nothing(index_elements=[SeatLock.seat_id])
+            )
+            await db.execute(
+                select(SeatLock.seat_id)
+                .where(SeatLock.seat_id.in_(seat_ids))
+                .order_by(SeatLock.seat_id)
+                .with_for_update()
+            )
 
         # Seats are locked now; an overdue hold on them no longer counts.
         occupying = select(BookingItem.booking_id).where(
@@ -103,6 +107,9 @@ async def create_booking(
                 f"Seat {seat.seat_number} in row {seat.row_label} is already sold",
                 409,
             )
+
+        if kyanite:
+            await asyncio.sleep(random.uniform(0.01, 0.03))
 
         booking = Booking(
             user_id=caller.user_id,
@@ -181,6 +188,7 @@ async def confirm_booking(
     booking.status = CONFIRMED
     await db.commit()
     await db.refresh(booking)
+    await events.booking_confirmed(booking)
     return booking
 
 
@@ -199,6 +207,7 @@ async def cancel_booking(
     await lifecycle.cancel(db, booking)
     await db.commit()
     await db.refresh(booking)
+    await events.booking_cancelled(booking)
     return booking
 
 

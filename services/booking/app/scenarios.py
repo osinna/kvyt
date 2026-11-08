@@ -1,4 +1,4 @@
-"""Scenarios owned by booking. None are implemented in the code yet."""
+"""Scenarios owned by booking."""
 
 from kvyt_common import load_scenarios
 

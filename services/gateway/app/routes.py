@@ -33,6 +33,7 @@ ROUTES: tuple[Route, ...] = (
     Route("booking", True, pattern=re.compile(rf"{API_PREFIX}/events/{_ID}/bookings")),
     Route("catalog", True, pattern=re.compile(rf"{API_PREFIX}/events"), methods=frozenset({"POST"})),
     Route("catalog", True, pattern=re.compile(rf"{API_PREFIX}/events/{_ID}"), methods=frozenset({"PATCH"})),
+    Route("notify", True, pattern=re.compile(rf"{API_PREFIX}/me/notifications")),
     Route("identity", False, prefix=f"{API_PREFIX}/auth"),
     Route("identity", True, prefix=f"{API_PREFIX}/me"),
     Route("identity", True, prefix=f"{API_PREFIX}/users"),

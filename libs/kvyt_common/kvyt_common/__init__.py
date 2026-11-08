@@ -23,6 +23,7 @@ from .middleware import (
     TRACE_ID_HEADER,
     TraceIdMiddleware,
     current_trace_id,
+    trace_context,
 )
 from .scenarios import (
     REGISTRY,
@@ -58,6 +59,7 @@ __all__ = [
     "make_postgres_check",
     "parse_scenarios",
     "register_exception_handlers",
+    "trace_context",
     "relay_response",
     "require_role",
     "require_user",

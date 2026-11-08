@@ -27,6 +27,7 @@ define start
 	@echo ""
 	@echo "Web:     http://localhost:3000"
 	@echo "Gateway: http://localhost:8080"
+	@echo "Broker:  http://localhost:15672 (kvyt / kvyt)"
 endef
 
 up: .env

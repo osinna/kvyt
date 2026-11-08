@@ -5,8 +5,8 @@
 set -u
 cd "$(dirname "$0")/.."
 
-SERVICES=(postgres identity catalog booking gateway web)
-HTTP_SERVICES=(identity catalog booking gateway web)
+SERVICES=(postgres broker identity catalog booking notify gateway web)
+HTTP_SERVICES=(identity catalog booking notify gateway web)
 failures=0
 
 row() {  # row OK|FAIL "check" "details" ["hint"]
@@ -121,6 +121,19 @@ for pair in "catalog booking" "booking catalog"; do
   fi
 done
 
+# --- booking -> broker, broker UI ------------------------------------------
+if docker compose exec -T booking python -c "import socket; socket.create_connection(('broker', 5672), 3)" >/dev/null 2>&1; then
+  row OK "booking -> broker" "reachable"
+else
+  row FAIL "booking -> broker" "not reachable" "Bookings work, but notifications are not sent. Check: docker compose logs broker | tail -30"
+fi
+code=$(curl -s -o /dev/null -w '%{http_code}' -u kvyt:kvyt http://localhost:15672/api/overview 2>/dev/null || true)
+if [ "$code" = "200" ]; then
+  row OK "Broker UI" "http://localhost:15672 (kvyt / kvyt)"
+else
+  row FAIL "Broker UI" "HTTP ${code:-none}" "Is port 15672 taken? lsof -i :15672"
+fi
+
 # --- Seed data ------------------------------------------------------------
 events=$(docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d catalog -Atc "SELECT count(*) FROM events"' 2>/dev/null | tr -d '[:space:]')
 if [ -n "$events" ] && [ "$events" -gt 0 ] 2>/dev/null; then
@@ -141,7 +154,7 @@ row OK "BUG_SCENARIO" "${active:-none active}"
 
 echo
 if [ "$failures" -eq 0 ]; then
-  echo "All checks passed. Web: http://localhost:3000  Gateway: http://localhost:8080"
+  echo "All checks passed. Web: http://localhost:3000  Gateway: http://localhost:8080  Broker: http://localhost:15672"
 else
   echo "$failures check(s) failed. Fix the first FAIL first; later ones often follow from it."
   exit 1

@@ -50,6 +50,7 @@ def build_clients() -> dict[str, ServiceClient]:
         "identity": ServiceClient("identity", settings.identity_url, timeout),
         "catalog": ServiceClient("catalog", settings.catalog_url, timeout),
         "booking": ServiceClient("booking", settings.booking_url, timeout),
+        "notify": ServiceClient("notify", settings.notify_url, timeout),
     }
 
 

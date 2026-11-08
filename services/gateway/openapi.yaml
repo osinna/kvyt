@@ -307,6 +307,46 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /api/v1/me/notifications:
+    get:
+      tags: [me]
+      operationId: listMyNotifications
+      summary: Notifications of the current user
+      description: |
+        The caller's own notifications, newest first. A notification is created
+        asynchronously after a booking is confirmed or cancelled, usually within
+        a few seconds. Until it exists the list is empty (`200`, `[]`), so a
+        client can poll for it. One event gives one notification.
+
+        Access: any signed-in role (`user`, `organizer`, `admin`), only the caller's own notifications.
+
+        OAuth tokens are not accepted (`403`, `insufficient_scope`): log in with `POST /api/v1/auth/login`.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: booking_id
+          in: query
+          required: false
+          description: Only notifications about this booking
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Notifications, possibly none
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationOut"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   /api/v1/events:
     get:
       tags: [events]
@@ -740,6 +780,9 @@ paths:
       description: |
         `HELD` → `CONFIRMED`.
 
+        A notification is created asynchronously; it usually appears in
+        `GET /api/v1/me/notifications` within a few seconds. One event gives one notification.
+
         Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
 
         OAuth: a `partner-app` token needs the `bookings:write` scope; a login token works as well.
@@ -779,6 +822,9 @@ paths:
       summary: Cancel a booking
       description: |
         `HELD` or `CONFIRMED` → `CANCELLED`. The seats are released.
+
+        A notification is created asynchronously; it usually appears in
+        `GET /api/v1/me/notifications` within a few seconds. One event gives one notification.
 
         Access: any signed-in role (`user`, `organizer`, `admin`), only for the caller's own bookings.
 
@@ -1716,6 +1762,28 @@ components:
         `HELD` → `CONFIRMED` → `USED`. A hold not confirmed before `held_until`
         becomes `EXPIRED`; `HELD` and `CONFIRMED` can become `CANCELLED`.
 
+    NotificationOut:
+      type: object
+      required: [id, user_id, booking_id, type, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        booking_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [booking_confirmed, booking_cancelled]
+        status:
+          type: string
+          enum: [SENT]
+        created_at:
+          type: string
+          format: date-time
     BookingOut:
       type: object
       required: [id, user_id, session_id, status, held_until, created_at, updated_at, items, total_uah]
